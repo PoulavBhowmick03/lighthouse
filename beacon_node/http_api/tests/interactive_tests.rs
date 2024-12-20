@@ -854,6 +854,53 @@ pub async fn fork_choice_before_proposal() {
 }
 
 // Test that attestations to unknown blocks are requeued and processed when their block arrives.
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn valid_single_attestation() {
+    let validator_count = 128;
+    let all_validators = (0..validator_count).collect::<Vec<_>>();
+
+    let tester = InteractiveTester::<E>::new(None, validator_count).await;
+    let harness = &tester.harness;
+    let client = tester.client.clone();
+
+    let num_initial = 5;
+
+    // Slot of the block attested to.
+    let attestation_slot = Slot::new(num_initial) + 1;
+
+    // Make some initial blocks.
+    harness.advance_slot();
+    harness
+        .extend_chain(
+            num_initial as usize,
+            BlockStrategy::OnCanonicalHead,
+            AttestationStrategy::AllValidators,
+        )
+        .await;
+
+    harness.advance_slot();
+    assert_eq!(harness.get_current_slot(), attestation_slot);
+
+    // Make the attested-to block without applying it.
+    let pre_state = harness.get_current_state();
+    let (block, post_state) = harness.make_block(pre_state, attestation_slot).await;
+    let block_root = block.0.canonical_root();
+
+    // Make attestations to the block and POST them to the beacon node on a background thread.
+    let attestations = harness
+        .make_single_attestations(
+            &all_validators,
+            &post_state,
+            block.0.state_root(),
+            block_root.into(),
+            attestation_slot,
+        )
+        .into_iter()
+        .flat_map(|attestations| attestations.into_iter().map(|(att, _subnet)| att))
+        .collect::<Vec<_>>();
+}
+
+// Test that attestations to unknown blocks are requeued and processed when their block arrives.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn queue_attestations_from_http() {
     let validator_count = 128;
@@ -902,7 +949,7 @@ async fn queue_attestations_from_http() {
     let fork_name = tester.harness.spec.fork_name_at_slot::<E>(attestation_slot);
     let attestation_future = tokio::spawn(async move {
         client
-            .post_beacon_pool_attestations_v2(&attestations, fork_name)
+            .post_beacon_pool_attestations_v1(&attestations)
             .await
             .expect("attestations should be processed successfully")
     });

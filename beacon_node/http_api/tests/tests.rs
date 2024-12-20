@@ -1810,7 +1810,7 @@ impl ApiTester {
             .map(|att| self.chain.spec.fork_name_at_slot::<E>(att.data().slot))
             .unwrap();
         self.client
-            .post_beacon_pool_attestations_v2(self.attestations.as_slice(), fork_name)
+            .post_beacon_pool_attestations_v1(self.attestations.as_slice())
             .await
             .unwrap();
         assert!(
@@ -1876,7 +1876,7 @@ impl ApiTester {
 
         let err_v2 = self
             .client
-            .post_beacon_pool_attestations_v2(attestations.as_slice(), fork_name)
+            .post_beacon_pool_attestations_v1(attestations.as_slice())
             .await
             .unwrap_err();
 

@@ -413,28 +413,32 @@ impl<E: EthSpec> AttestationElectra<E> {
             .first()
             .ok_or(Error::InvalidAggregationBit)?;
 
+        println!("committees! {:?}", committees);
+
         let beacon_committee = committees
             .get(committee_index as usize)
             .ok_or(Error::InvalidCommitteeIndex)?;
 
-        let attester_indices = beacon_committee
+        println!("agg bit {} committee index {}", aggregation_bit, committee_index);
+
+
+        println!("agg bit {}", aggregation_bit);
+        println!("agg bit {} committees {:?}", aggregation_bit, beacon_committee.committee);
+        let attester_index = beacon_committee
             .committee
             .iter()
             .enumerate()
-            .filter_map(|(i, &index)| {
+            .find_map(|(i, &index)| {
+                println!("agg bit {} val index {}", aggregation_bit, index);
+                println!("agg bit {} ith {}", aggregation_bit, i);
                 if aggregation_bit as usize == i {
+                    println!("agg bit {} RETURNED INDEX {}", aggregation_bit, index);
                     return Some(index);
                 }
                 None
-            })
-            .collect::<Vec<_>>();
+            });
 
-        if attester_indices.len() != 1 {
-            return Err(Error::InvalidAggregationBit);
-        };
-
-        let attester_index = *attester_indices
-            .first()
+        let attester_index = attester_index
             .ok_or(Error::InvalidAggregationBit)?;
 
         Ok(SingleAttestation {
@@ -674,36 +678,39 @@ impl SingleAttestation {
         &self,
         committees: &[BeaconCommittee],
     ) -> Result<Attestation<E>, Error> {
-        let beacon_committee = committees
-            .get(self.committee_index)
-            .ok_or(Error::InvalidAggregationBit)?;
-        let aggregation_bits = beacon_committee
-            .committee
-            .iter()
-            .enumerate()
-            .filter_map(|(i, &validator_index)| {
-                if self.attester_index == validator_index {
-                    return Some(i);
-                }
-                None
-            })
-            .collect::<Vec<_>>();
 
-        if aggregation_bits.len() != 1 {
-            return Err(Error::InvalidAggregationBit);
+        let mut committee_offset = 0;
+        let mut aggregation_bit: Option<usize> = None;
+        for beacon_committee in committees {
+            if beacon_committee.index == self.committee_index as u64 {
+                aggregation_bit = beacon_committee
+                    .committee
+                    .iter()
+                    .enumerate()
+                    .find_map(|(i, &validator_index)| {
+                        if self.attester_index == validator_index {
+                            return Some(i + committee_offset);
+                        }
+                        None
+                    });
+                committee_offset += beacon_committee.committee.len();
+                break;
+            } else {
+                committee_offset += beacon_committee.committee.len();
+            }
         }
-
-        let aggregation_bit = aggregation_bits.first().unwrap();
+        
+        let aggregation_bit = aggregation_bit.ok_or(Error::InvalidAggregationBit)?;
 
         let mut committee_bits: BitVector<E::MaxCommitteesPerSlot> = BitVector::default();
         committee_bits
             .set(self.committee_index, true)
             .map_err(|_| Error::InvalidCommitteeIndex)?;
 
-        let mut aggregation_bits = BitList::with_capacity(beacon_committee.committee.len())
+        let mut aggregation_bits = BitList::with_capacity(committee_offset)
             .map_err(|_| Error::InvalidCommitteeLength)?;
 
-        aggregation_bits.set(*aggregation_bit, true)?;
+        aggregation_bits.set(aggregation_bit, true)?;
 
         Ok(Attestation::Electra(AttestationElectra {
             aggregation_bits,
