@@ -2,7 +2,7 @@ use crate::config::{OnDiskStoreConfig, StoreConfig};
 use crate::forwards_iter::{HybridForwardsBlockRootsIterator, HybridForwardsStateRootsIterator};
 use crate::hdiff::{HDiff, HDiffBuffer, HierarchyModuli, StorageStrategy};
 use crate::historic_state_cache::HistoricStateCache;
-use crate::iter::{BlockRootsIterator, ParentRootBlockIterator, RootsIterator};
+use crate::iter::{BlockRootsIterator, ParentRootBlockIterator, RootsIterator, StateRootsIterator};
 use crate::leveldb_store::{BytesKey, LevelDB};
 use crate::memory_store::MemoryStore;
 use crate::metadata::{
@@ -177,7 +177,7 @@ pub enum HotColdDBError {
     MissingFrozenBlock(Slot),
     MissingPathToBlobsDatabase,
     BlobsPreviouslyInDefaultStore,
-    HdiffGetPriorStateRootError(BeaconStateError, Slot, Slot),
+    HdiffGetPriorStateRootError(Slot, Slot),
     RestorePointDecodeError(ssz::DecodeError),
     BlockReplayBeaconError(BeaconStateError),
     BlockReplaySlotError(SlotProcessingError),
@@ -1530,8 +1530,12 @@ impl<E: EthSpec, Hot: ItemStore<E>, Cold: ItemStore<E>> HotColdDB<E, Hot, Cold> 
         // Store a summary of the state.
         // We store one even for the epoch boundary states, as we may need their slots
         // when doing a look up by state root.
-        let hot_state_summary =
-            HotStateSummary::new(state_root, state, self.hot_storage_strategy(state.slot())?)?;
+        let hot_state_summary = HotStateSummary::new(
+            self,
+            state_root,
+            state,
+            self.hot_storage_strategy(state.slot())?,
+        )?;
         ops.push(hot_state_summary.as_kv_store_op(*state_root));
         Ok(())
     }
@@ -1571,12 +1575,10 @@ impl<E: EthSpec, Hot: ItemStore<E>, Cold: ItemStore<E>> HotColdDB<E, Hot, Cold> 
                     "from_slot" => from_slot,
                     "slot" => slot,
                 );
-                // TODO(hdiff): Max distance in a diff layer must be less than SlotsPerHistoricalRoot
-                // we should fix this by using the state summary iterator to go back
-                let from_root = *state.get_state_root(from_slot).map_err(|e| {
-                    HotColdDBError::HdiffGetPriorStateRootError(e, state.slot(), from_slot)
-                })?;
 
+                let from_root = get_ancenstor_state_root(self, state, from_slot)?.ok_or(
+                    HotColdDBError::HdiffGetPriorStateRootError(state.slot(), from_slot),
+                )?;
                 self.store_hot_state_as_diff(state_root, state, from_root, ops)?;
             }
         }
@@ -3381,6 +3383,22 @@ fn no_state_root_iter() -> Option<std::iter::Empty<Result<(Hash256, Slot), Error
     None
 }
 
+/// Return the ancestor state root of a state beyond SlotsPerHistoricalRoot using the roots iterator
+/// and the store
+fn get_ancenstor_state_root<'a, E: EthSpec, Hot: ItemStore<E>, Cold: ItemStore<E>>(
+    store: &'a HotColdDB<E, Hot, Cold>,
+    state: &'a BeaconState<E>,
+    target_slot: Slot,
+) -> Result<Option<Hash256>, Error> {
+    StateRootsIterator::new(store, state)
+        .find(|result| match result {
+            Ok((_, result_slot)) => *result_slot == target_slot,
+            Err(_) => true, // Keep errors intact and stop on the first occurrence
+        })
+        .transpose()
+        .map(|opt| opt.map(|(root, _)| root))
+}
+
 /// Struct for summarising a state in the hot database.
 ///
 /// Allows full reconstruction by replaying blocks.
@@ -3441,7 +3459,8 @@ impl StoreItem for HotStateSummary {
 
 impl HotStateSummary {
     /// Construct a new summary of the given state.
-    pub fn new<E: EthSpec>(
+    pub fn new<E: EthSpec, Hot: ItemStore<E>, Cold: ItemStore<E>>(
+        store: &HotColdDB<E, Hot, Cold>,
         state_root: &Hash256,
         state: &BeaconState<E>,
         storage_strategy: StorageStrategy,
@@ -3452,12 +3471,11 @@ impl HotStateSummary {
 
         let get_state_root = |slot| {
             if slot == state.slot() {
-                Ok(*state_root)
+                Ok::<_, Error>(*state_root)
             } else {
-                state
-                    .get_state_root(slot)
-                    .copied()
-                    .map_err(|e| HotColdDBError::HdiffGetPriorStateRootError(e, state.slot(), slot))
+                Ok(get_ancenstor_state_root(store, state, slot)?.ok_or(
+                    HotColdDBError::HdiffGetPriorStateRootError(state.slot(), slot),
+                )?)
             }
         };
         let diff_base_slot = storage_strategy.diff_base_slot();
