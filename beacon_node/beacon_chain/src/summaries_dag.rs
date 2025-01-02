@@ -196,11 +196,12 @@ impl StateSummariesDAG {
     }
 }
 
-impl From<HotStateSummary> for DAGStateSummaryV22 {
+impl From<HotStateSummary> for DAGStateSummary {
     fn from(value: HotStateSummary) -> Self {
         Self {
             slot: value.slot,
             latest_block_root: value.latest_block_root,
+            previous_state_root: value.previous_state_root,
         }
     }
 }

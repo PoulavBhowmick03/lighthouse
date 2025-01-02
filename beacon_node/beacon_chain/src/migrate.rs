@@ -1,11 +1,11 @@
 use crate::errors::BeaconChainError;
 use crate::summaries_dag::{
-    BlockSummariesDAG, DAGBlockSummary, DAGStateSummaryV22, Error as SummariesDagError,
+    BlockSummariesDAG, DAGBlockSummary, DAGStateSummary, Error as SummariesDagError,
     StateSummariesDAG,
 };
 use parking_lot::Mutex;
 use slog::{debug, error, info, warn, Logger};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::mem;
 use std::sync::{mpsc, Arc};
 use std::thread;
@@ -462,7 +462,6 @@ impl<E: EthSpec, Hot: ItemStore<E>, Cold: ItemStore<E>> BackgroundMigrator<E, Ho
         new_finalized_checkpoint: Checkpoint,
         log: &Logger,
     ) -> Result<PruningOutcome, BeaconChainError> {
-        let split_state_root = store.get_split_info().state_root;
         let new_finalized_slot = new_finalized_checkpoint
             .epoch
             .start_slot(E::slots_per_epoch());
@@ -494,7 +493,7 @@ impl<E: EthSpec, Hot: ItemStore<E>, Cold: ItemStore<E>> BackgroundMigrator<E, Ho
                 .load_hot_state_summaries()?
                 .into_iter()
                 .map(|(state_root, summary)| (state_root, summary.into()))
-                .collect::<Vec<(Hash256, DAGStateSummaryV22)>>();
+                .collect::<Vec<(Hash256, DAGStateSummary)>>();
 
             // De-duplicate block roots to reduce block reads below
             let summary_block_roots = HashSet::<Hash256>::from_iter(
@@ -528,18 +527,8 @@ impl<E: EthSpec, Hot: ItemStore<E>, Cold: ItemStore<E>> BackgroundMigrator<E, Ho
                 })
                 .collect::<Result<Vec<_>, BeaconChainError>>()?;
 
-            let parent_block_roots = blocks
-                .iter()
-                .map(|(block_root, block)| (*block_root, block.parent_root))
-                .collect::<HashMap<Hash256, Hash256>>();
-
             (
-                StateSummariesDAG::new_from_v22(
-                    state_summaries,
-                    parent_block_roots,
-                    split_state_root,
-                )
-                .map_err(PruningError::SummariesDagError)?,
+                StateSummariesDAG::new(state_summaries),
                 BlockSummariesDAG::new(&blocks),
             )
         };
@@ -585,10 +574,17 @@ impl<E: EthSpec, Hot: ItemStore<E>, Cold: ItemStore<E>> BackgroundMigrator<E, Ho
             .min()
             .ok_or(PruningError::EmptyFinalizedBlocks)?;
 
+        // Compute the set of finalized state roots that we must keep to make the dynamic HDiff system
+        // work.
+        let required_finalized_diff_state_slots = store
+            .hierarchy_hot
+            .closest_layer_points(new_finalized_slot, store.hot_hdiff_start_slot());
+
         // We don't know which blocks are shared among abandoned chains, so we buffer and delete
         // everything in one fell swoop.
         let mut blocks_to_prune: HashSet<Hash256> = HashSet::new();
         let mut states_to_prune: HashSet<(Slot, Hash256)> = HashSet::new();
+        let mut kept_summaries_for_hdiff = vec![];
 
         for (slot, summaries) in state_summaries_dag.summaries_by_slot_ascending() {
             for (state_root, summary) in summaries {
@@ -597,6 +593,30 @@ impl<E: EthSpec, Hot: ItemStore<E>, Cold: ItemStore<E>> BackgroundMigrator<E, Ho
                         // Keep this state is the post state of a viable head, or a state advance from a
                         // viable head.
                         false
+                    } else if required_finalized_diff_state_slots.contains(&slot) {
+                        // Keep this state and diff as it's necessary for the finalized portion of the
+                        // HDiff links. `required_finalized_diff_state_slots` tracks the set of slots on
+                        // each diff layer, and by checking `newly_finalized_state_roots` which only
+                        // keep those on the finalized canonical chain. Checking the state root ensures
+                        // we avoid lingering forks.
+
+                        // In the diagram below, `o` are diffs by slot that we must keep. In the prior
+                        // finalized section there's only one chain so we preserve them unconditionally.
+                        // For the newly finalized chain, we check which of is canonical and only keep
+                        // those. Slots below `min_finalized_state_slot` we don't have canonical
+                        // information so we assume they are part of the finalized pruned chain.
+                        //
+                        //                  /-----o----
+                        // o-------o------/-------o----
+                        if slot < newly_finalized_states_min_slot
+                            || newly_finalized_state_roots.contains(&state_root)
+                        {
+                            // Track kept summaries to debug hdiff inconsistencies with "Extra pruning information"
+                            kept_summaries_for_hdiff.push((state_root, slot));
+                            false
+                        } else {
+                            true
+                        }
                     } else {
                         // Everything else, prune
                         true
@@ -650,6 +670,8 @@ impl<E: EthSpec, Hot: ItemStore<E>, Cold: ItemStore<E>> BackgroundMigrator<E, Ho
             "newly_finalized_blocks_min_slot" => newly_finalized_blocks_min_slot,
             "newly_finalized_state_roots" => newly_finalized_state_roots.len(),
             "newly_finalized_states_min_slot" => newly_finalized_states_min_slot,
+            "required_finalized_diff_state_slots" => ?required_finalized_diff_state_slots,
+            "kept_summaries_for_hdiff" => ?kept_summaries_for_hdiff,
             "state_summaries_count" => state_summaries_dag.summaries_count(),
             "finalized_and_descendant_block_roots" => finalized_and_descendant_block_roots.len(),
             "blocks_to_prune_count" => blocks_to_prune.len(),
