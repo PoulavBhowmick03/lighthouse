@@ -386,8 +386,21 @@ where
     }
 
     /// Starts a new chain from a genesis state.
-    pub fn genesis_state(mut self, beacon_state: BeaconState<E>) -> Result<Self, String> {
+    pub fn genesis_state(mut self, mut beacon_state: BeaconState<E>) -> Result<Self, String> {
         let store = self.store.clone().ok_or("genesis_state requires a store")?;
+
+        // Initialize anchor info before attempting to write the genesis state
+        let retain_historic_states = self.chain_config.reconstruct_historic_states;
+        let genesis_beacon_block = genesis_block(&mut beacon_state, &self.spec)?;
+        self.pending_io_batch.push(
+            store
+                .init_anchor_info(
+                    genesis_beacon_block.message(),
+                    Slot::new(0),
+                    retain_historic_states,
+                )
+                .map_err(|e| format!("Failed to initialize genesis anchor: {:?}", e))?,
+        );
 
         let (genesis, updated_builder) = self.set_genesis_state(beacon_state)?;
         self = updated_builder;
@@ -395,16 +408,6 @@ where
         // Stage the database's metadata fields for atomic storage when `build` is called.
         // Since v4.4.0 we will set the anchor with a dummy state upper limit in order to prevent
         // historic states from being retained (unless `--reconstruct-historic-states` is set).
-        let retain_historic_states = self.chain_config.reconstruct_historic_states;
-        self.pending_io_batch.push(
-            store
-                .init_anchor_info(
-                    genesis.beacon_block.message(),
-                    Slot::new(0),
-                    retain_historic_states,
-                )
-                .map_err(|e| format!("Failed to initialize genesis anchor: {:?}", e))?,
-        );
         self.pending_io_batch.push(
             store
                 .init_blob_info(genesis.beacon_block.slot())

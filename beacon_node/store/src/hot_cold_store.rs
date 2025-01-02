@@ -472,11 +472,18 @@ impl<E: EthSpec, Hot: ItemStore<E>, Cold: ItemStore<E>> HotColdDB<E, Hot, Cold> 
     pub fn hot_storage_strategy(&self, slot: Slot) -> Result<StorageStrategy, Error> {
         Ok(self
             .hierarchy_hot
-            .storage_strategy(slot, self.hot_hdiff_start_slot())?)
+            .storage_strategy(slot, self.hot_hdiff_start_slot()?)?)
     }
 
-    pub fn hot_hdiff_start_slot(&self) -> Slot {
-        self.anchor_info.read_recursive().anchor_slot
+    pub fn hot_hdiff_start_slot(&self) -> Result<Slot, Error> {
+        let anchor_slot = self.anchor_info.read_recursive().anchor_slot;
+        if anchor_slot == u64::MAX {
+            // If hot_hdiff_start_slot returns such a high value all writes will fail. This should
+            // never happen, but it's best to stop this useless value from propagating downstream
+            Err(Error::AnchorUninitialized)
+        } else {
+            Ok(anchor_slot)
+        }
     }
 
     pub fn update_finalized_state(

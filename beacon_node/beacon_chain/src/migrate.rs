@@ -578,7 +578,7 @@ impl<E: EthSpec, Hot: ItemStore<E>, Cold: ItemStore<E>> BackgroundMigrator<E, Ho
         // work.
         let required_finalized_diff_state_slots = store
             .hierarchy_hot
-            .closest_layer_points(new_finalized_slot, store.hot_hdiff_start_slot());
+            .closest_layer_points(new_finalized_slot, store.hot_hdiff_start_slot()?);
 
         // We don't know which blocks are shared among abandoned chains, so we buffer and delete
         // everything in one fell swoop.
