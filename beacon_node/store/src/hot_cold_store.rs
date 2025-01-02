@@ -177,7 +177,7 @@ pub enum HotColdDBError {
     MissingFrozenBlock(Slot),
     MissingPathToBlobsDatabase,
     BlobsPreviouslyInDefaultStore,
-    HotStateSummaryError(BeaconStateError),
+    HdiffGetPriorStateRootError(BeaconStateError, Slot, Slot),
     RestorePointDecodeError(ssz::DecodeError),
     BlockReplayBeaconError(BeaconStateError),
     BlockReplaySlotError(SlotProcessingError),
@@ -1573,9 +1573,9 @@ impl<E: EthSpec, Hot: ItemStore<E>, Cold: ItemStore<E>> HotColdDB<E, Hot, Cold> 
                 );
                 // TODO(hdiff): Max distance in a diff layer must be less than SlotsPerHistoricalRoot
                 // we should fix this by using the state summary iterator to go back
-                let from_root = *state
-                    .get_state_root(from_slot)
-                    .map_err(HotColdDBError::HotStateSummaryError)?;
+                let from_root = *state.get_state_root(from_slot).map_err(|e| {
+                    HotColdDBError::HdiffGetPriorStateRootError(e, state.slot(), from_slot)
+                })?;
 
                 self.store_hot_state_as_diff(state_root, state, from_root, ops)?;
             }
@@ -3457,7 +3457,7 @@ impl HotStateSummary {
                 state
                     .get_state_root(slot)
                     .copied()
-                    .map_err(HotColdDBError::HotStateSummaryError)
+                    .map_err(|e| HotColdDBError::HdiffGetPriorStateRootError(e, state.slot(), slot))
             }
         };
         let diff_base_slot = storage_strategy.diff_base_slot();
