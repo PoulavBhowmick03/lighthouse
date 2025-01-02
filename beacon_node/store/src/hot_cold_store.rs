@@ -2389,7 +2389,7 @@ impl<E: EthSpec, Hot: ItemStore<E>, Cold: ItemStore<E>> HotColdDB<E, Hot, Cold> 
     /// Initialise the anchor info for checkpoint sync starting from `block`.
     pub fn init_anchor_info(
         &self,
-        block: BeaconBlockRef<'_, E>,
+        oldest_block_parent: Hash256,
         anchor_slot: Slot,
         retain_historic_states: bool,
     ) -> Result<KeyValueStoreOp, Error> {
@@ -2407,7 +2407,7 @@ impl<E: EthSpec, Hot: ItemStore<E>, Cold: ItemStore<E>> HotColdDB<E, Hot, Cold> 
             AnchorInfo {
                 anchor_slot,
                 oldest_block_slot: anchor_slot,
-                oldest_block_parent: block.parent_root(),
+                oldest_block_parent,
                 state_upper_limit,
                 state_lower_limit: self.spec.genesis_slot,
             }

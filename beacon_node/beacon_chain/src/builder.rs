@@ -395,7 +395,7 @@ where
         self.pending_io_batch.push(
             store
                 .init_anchor_info(
-                    genesis_beacon_block.message(),
+                    genesis_beacon_block.message().parent_root(),
                     Slot::new(0),
                     retain_historic_states,
                 )
@@ -560,7 +560,7 @@ where
         self.pending_io_batch.push(
             store
                 .init_anchor_info(
-                    weak_subj_block.message(),
+                    weak_subj_block.message().parent_root(),
                     weak_subj_slot,
                     retain_historic_states,
                 )

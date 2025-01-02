@@ -451,6 +451,11 @@ mod test {
         let store =
             HotColdDB::open_ephemeral(Config::default(), Arc::new(ChainSpec::minimal()), log)
                 .unwrap();
+        // Init achor info so anchor slot is set. Use a random block as it is only used for the
+        // parent_root
+        let _ = store
+            .init_anchor_info(Hash256::ZERO, Slot::new(0), false)
+            .unwrap();
         let slots_per_historical_root = MainnetEthSpec::slots_per_historical_root();
 
         let mut state_a: BeaconState<MainnetEthSpec> = get_state();
