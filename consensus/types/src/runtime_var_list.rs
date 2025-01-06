@@ -41,7 +41,7 @@ use std::slice::SliceIndex;
 /// // Push a value to if it _does_ exceed the maximum.
 /// assert!(long.push(6).is_err());
 ///
-/// let mut uninit = RuntimeVariableList::empty_unitialized();
+/// let mut uninit = RuntimeVariableList::empty_uninitialized();
 /// assert!(uninit.push(5).is_err());
 ///
 /// // Set max_len to allow mutation.
