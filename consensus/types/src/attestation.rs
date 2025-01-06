@@ -626,33 +626,6 @@ pub struct SingleAttestation {
 }
 
 impl SingleAttestation {
-    /// Produces a `SingleAttestation` with empty signature and empty attester index.
-    pub fn empty_for_signing(
-        committee_index: usize,
-        slot: Slot,
-        beacon_block_root: Hash256,
-        source: Checkpoint,
-        target: Checkpoint,
-    ) -> Self {
-        Self {
-            committee_index,
-            attester_index: 0,
-            data: AttestationData {
-                slot,
-                index: 0,
-                beacon_block_root,
-                source,
-                target,
-            },
-            signature: AggregateSignature::infinity(),
-        }
-    }
-
-    pub fn add_signature(&mut self, signature: &AggregateSignature, committee_position: usize) {
-        self.attester_index = committee_position;
-        self.signature = signature.clone();
-    }
-
     pub fn to_attestation<E: EthSpec>(
         &self,
         committee: Option<BeaconCommittee>,

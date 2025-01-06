@@ -29,7 +29,7 @@ use lighthouse_network::{
     Client, MessageId, NetworkGlobals, PeerId, PubsubMessage,
 };
 use rand::prelude::SliceRandom;
-use slog::{debug, error, info, trace, warn, Logger};
+use slog::{debug, error, trace, warn, Logger};
 use slot_clock::ManualSlotClock;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -95,7 +95,6 @@ impl<T: BeaconChainTypes> NetworkBeaconProcessor<T> {
         should_import: bool,
         seen_timestamp: Duration,
     ) -> Result<(), Error<T::EthSpec>> {
-        info!(self.log, "SENDING A SINGLE ATTESTATION");
         let result = self.chain.with_committee_cache(
             single_attestation.data.target.root,
             single_attestation
