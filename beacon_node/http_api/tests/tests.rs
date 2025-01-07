@@ -39,7 +39,7 @@ use tokio::time::Duration;
 use tree_hash::TreeHash;
 use types::application_domain::ApplicationDomain;
 use types::{
-    attestation::AttestationBase, attestation::SingleAttestation, AggregateSignature, BitList,
+    attestation::AttestationBase, SingleAttestation, AggregateSignature, BitList,
     Domain, EthSpec, ExecutionBlockHash, Hash256, Keypair, MainnetEthSpec, RelativeEpoch,
     SelectionProof, SignedRoot, Slot,
 };

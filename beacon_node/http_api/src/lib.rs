@@ -81,7 +81,7 @@ use tokio_stream::{
     StreamExt,
 };
 use types::{
-    attestation::SingleAttestation, fork_versioned_response::EmptyMetadata, Attestation,
+    SingleAttestation, fork_versioned_response::EmptyMetadata, Attestation,
     AttestationData, AttestationShufflingId, AttesterSlashing, BeaconStateError, CommitteeCache,
     ConfigAndPreset, Epoch, EthSpec, ForkName, ForkVersionedResponse, Hash256,
     ProposerPreparationData, ProposerSlashing, RelativeEpoch, SignedAggregateAndProof,
