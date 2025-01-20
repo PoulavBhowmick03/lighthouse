@@ -56,7 +56,7 @@ use crate::observed_block_producers::ObservedBlockProducers;
 use crate::observed_data_sidecars::ObservedDataSidecars;
 use crate::observed_operations::{ObservationOutcome, ObservedOperations};
 use crate::observed_slashable::ObservedSlashable;
-use crate::persisted_beacon_chain::{PersistedBeaconChain, DUMMY_CANONICAL_HEAD_BLOCK_ROOT};
+use crate::persisted_beacon_chain::PersistedBeaconChain;
 use crate::persisted_fork_choice::PersistedForkChoice;
 use crate::pre_finalization_cache::PreFinalizationBlockCache;
 use crate::shuffling_cache::{BlockShufflingIds, ShufflingCache};
@@ -627,11 +627,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
 
     /// Return a `PersistedBeaconChain` without reference to a `BeaconChain`.
     pub fn make_persisted_head(genesis_block_root: Hash256) -> PersistedBeaconChain {
-        PersistedBeaconChain {
-            _canonical_head_block_root: DUMMY_CANONICAL_HEAD_BLOCK_ROOT,
-            genesis_block_root,
-            ssz_head_tracker: <_>::default(),
-        }
+        PersistedBeaconChain { genesis_block_root }
     }
 
     /// Return a database operation for writing the beacon chain head to disk.

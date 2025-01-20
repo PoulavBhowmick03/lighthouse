@@ -22,7 +22,7 @@ use lru::LruCache;
 use parking_lot::{Mutex, RwLock};
 use safe_arith::SafeArith;
 use serde::{Deserialize, Serialize};
-use slog::{debug, error, info, trace, warn, Logger};
+use slog::{debug, error, info, warn, Logger};
 use ssz::{Decode, Encode};
 use ssz_derive::{Decode, Encode};
 use state_processing::{
@@ -80,7 +80,7 @@ pub struct HotColdDB<E: EthSpec, Hot: ItemStore<E>, Cold: ItemStore<E>> {
     /// HTTP API.
     historic_state_cache: Mutex<HistoricStateCache<E>>,
     /// Chain spec.
-    pub(crate) spec: Arc<ChainSpec>,
+    pub spec: Arc<ChainSpec>,
     /// Logger.
     pub log: Logger,
     /// Mere vessel for E.
