@@ -134,6 +134,7 @@ pub struct ProtoArray {
     pub finalized_checkpoint: Checkpoint,
     pub nodes: Vec<ProtoNode>,
     pub indices: HashMap<Hash256, usize>,
+    pub unsatisfied_inclusion_list_block: Hash256,
     pub previous_proposer_boost: ProposerBoost,
 }
 
@@ -195,8 +196,12 @@ impl ProtoArray {
 
             let execution_status_is_invalid = node.execution_status.is_invalid();
 
-            let mut node_delta = if execution_status_is_invalid {
-                // If the node has an invalid execution payload, reduce its weight to zero.
+            // TODO(focil) seems sketchy...
+            let mut node_delta = if execution_status_is_invalid
+                || node.root == self.unsatisfied_inclusion_list_block
+            {
+                // If the node has an invalid execution payload, or the payload doesn't satisfy
+                // an inclusion list, reduce its weight to zero.
                 0_i64
                     .checked_sub(node.weight as i64)
                     .ok_or(Error::InvalidExecutionDeltaOverflow(node_index))?
@@ -884,6 +889,10 @@ impl ProtoArray {
     /// head.
     fn node_is_viable_for_head<E: EthSpec>(&self, node: &ProtoNode, current_slot: Slot) -> bool {
         if node.execution_status.is_invalid() {
+            return false;
+        }
+
+        if node.root == self.unsatisfied_inclusion_list_block {
             return false;
         }
 

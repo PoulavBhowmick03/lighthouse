@@ -2165,16 +2165,21 @@ impl<T: BeaconChainTypes> NetworkBeaconProcessor<T> {
         };
     }
 
+    // TODO(focil) unused variables
     pub fn process_gossip_inclusion_list(
         self: &Arc<Self>,
-        message_id: MessageId,
-        peer_id: PeerId,
+        _message_id: MessageId,
+        _peer_id: PeerId,
         il: SignedInclusionList<T::EthSpec>,
-        seen_timestamp: Duration,
+        _seen_timestamp: Duration,
     ) {
         match GossipVerifiedInclusionList::verify(&il, &self.chain) {
             Ok(gossip_verified_il) => {
                 debug!(self.log, "Successfully verified gossip inclusion list");
+                // Store validated inclusion list in the IL cache. This also catches
+                // equivocating IL's and handles them accordingly.
+                self.chain
+                    .on_verified_inclusion_list(gossip_verified_il.signed_il);
             }
             Err(err) => match err {
                 GossipInclusionListError::FutureSlot { .. }

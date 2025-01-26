@@ -471,6 +471,8 @@ pub struct BeaconChain<T: BeaconChainTypes> {
     pub(crate) attester_cache: Arc<AttesterCache>,
     /// A cache used when producing attestations whilst the head block is still being imported.
     pub early_attester_cache: EarlyAttesterCache<T::EthSpec>,
+    /// A cache used to store verified/equivocating inclusion lists.
+    pub inclusion_list_cache: RwLock<InclusionListCache<T::EthSpec>>,
     /// Cache gossip verified blocks to serve over ReqResp before they are imported
     pub reqresp_pre_import_cache: Arc<RwLock<ReqRespPreImportCache<T::EthSpec>>>,
     /// A cache used to keep track of various block timings.
@@ -7286,6 +7288,41 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
             finalized_period,
             &self.spec,
         )
+    }
+
+    pub async fn set_unsatisfied_inclusion_list_block(
+        self: &Arc<Self>,
+        block_root: Hash256,
+    ) -> Result<(), Error> {
+        let chain = self.clone();
+        let fork_choice_result = self
+            .spawn_blocking_handle(
+                move || {
+                    chain
+                        .canonical_head
+                        .fork_choice_write_lock()
+                        .on_invalid_inclusion_list_payload(block_root)
+                },
+                "invalid_inclusion_list_payload",
+            )
+            .await;
+
+        // Update fork choice.
+        if let Err(e) = fork_choice_result {
+            crit!(
+                self.log,
+                "Failed to process invalid inclusion list payload";
+                "error" => ?e,
+            );
+        }
+
+        Ok(())
+    }
+
+    pub fn on_verified_inclusion_list(&self, signed_il: SignedInclusionList<T::EthSpec>) {
+        self.inclusion_list_cache
+            .write()
+            .on_inclusion_list(signed_il);
     }
 
     pub fn metrics(&self) -> BeaconChainMetrics {

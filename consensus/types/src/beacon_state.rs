@@ -28,6 +28,7 @@ pub use self::committee_cache::{
 };
 pub use crate::beacon_state::balance::Balance;
 pub use crate::beacon_state::exit_cache::ExitCache;
+pub use crate::beacon_state::inclusion_list_cache::InclusionListCache;
 pub use crate::beacon_state::progressive_balances_cache::*;
 pub use crate::beacon_state::slashings_cache::SlashingsCache;
 pub use eth_spec::*;
@@ -38,6 +39,7 @@ pub use milhouse::{interface::Interface, List, Vector};
 mod committee_cache;
 mod balance;
 mod exit_cache;
+mod inclusion_list_cache;
 mod iter;
 mod progressive_balances_cache;
 mod pubkey_cache;
@@ -842,7 +844,7 @@ impl<E: EthSpec> BeaconState<E> {
     ) -> Result<InclusionListCommittee<E>, Error> {
         let epoch = slot.epoch(E::slots_per_epoch());
         let current_epoch = self.current_epoch();
-        let next_epoch = current_epoch + 1;
+        let next_epoch = current_epoch.safe_add(1)?;
         if epoch != current_epoch || epoch != next_epoch {
             return Err(Error::SlotOutOfBounds);
         }
@@ -850,9 +852,10 @@ impl<E: EthSpec> BeaconState<E> {
         let seed = self.get_inclusion_list_seed(slot, spec)?;
         let indices = self.get_active_validator_indices(epoch, spec)?;
 
-        let start =
-            (slot % E::slots_per_epoch()).as_usize() * E::InclusionListCommitteeSize::to_usize();
-        let end = start + E::InclusionListCommitteeSize::to_usize();
+        let start = (slot.safe_rem(E::slots_per_epoch())?)
+            .as_usize()
+            .safe_mul(E::InclusionListCommitteeSize::to_usize())?;
+        let end = start.safe_add(E::InclusionListCommitteeSize::to_usize())?;
 
         let mut i = start;
         let mut il_committee_indices =

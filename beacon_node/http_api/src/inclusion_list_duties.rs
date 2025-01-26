@@ -1,4 +1,4 @@
-use beacon_chain::{BeaconChain, BeaconChainError, BeaconChainTypes};
+use beacon_chain::{BeaconChain, BeaconChainTypes};
 use eth2::types::{self as api_types};
 use slot_clock::SlotClock;
 use types::{Epoch, EthSpec, Hash256, InclusionListDuty};
@@ -9,13 +9,10 @@ type ApiDuties = api_types::DutiesResponse<Vec<api_types::InclusionListDutyData>
 /// Handles a request from the HTTP API for inclusion list duties.
 pub fn inclusion_list_duties<T: BeaconChainTypes>(
     request_epoch: Epoch,
+    current_epoch: Epoch,
     request_indices: &[u64],
     chain: &BeaconChain<T>,
 ) -> Result<ApiDuties, warp::reject::Rejection> {
-    let current_epoch = chain
-        .epoch()
-        .map_err(warp_utils::reject::beacon_chain_error)?;
-
     // Determine what the current epoch would be if we fast-forward our system clock by
     // `MAXIMUM_GOSSIP_CLOCK_DISPARITY`.
     //
@@ -35,7 +32,12 @@ pub fn inclusion_list_duties<T: BeaconChainTypes>(
         let head_block_root = chain.canonical_head.cached_head().head_block_root();
         let (duties, dependent_root) = chain
             .validator_inclusion_list_duties(request_indices, request_epoch, head_block_root)
-            .map_err(warp_utils::reject::beacon_chain_error)?;
+            .map_err(|e| {
+                warp_utils::reject::custom_server_error(format!(
+                    "Failed to fetch validator IL duties: {:?}",
+                    e
+                ))
+            })?;
         convert_to_api_response(duties, request_indices, dependent_root, chain)
     } else if request_epoch > current_epoch + 1 {
         Err(warp_utils::reject::custom_bad_request(format!(
@@ -73,7 +75,12 @@ fn convert_to_api_response<T: BeaconChainTypes>(
     let usize_indices = indices.iter().map(|i| *i as usize).collect::<Vec<_>>();
     let index_to_pubkey_map = chain
         .validator_pubkey_bytes_many(&usize_indices)
-        .map_err(warp_utils::reject::beacon_chain_error)?;
+        .map_err(|e| {
+            warp_utils::reject::custom_server_error(format!(
+                "Failed to fetch validator pubkeys: {:?}",
+                e
+            ))
+        })?;
 
     let data = duties
         .into_iter()
