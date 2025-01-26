@@ -43,7 +43,6 @@ dependencies = [
 name = "account_utils"
 version = "0.1.0"
 dependencies = [
- "directory",
  "eth2_keystore",
  "eth2_wallet",
  "filesystem",
@@ -2193,9 +2192,9 @@ dependencies = [
 
 [[package]]
 name = "discv5"
-version = "0.9.0"
+version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "898d136ecb64116ec68aecf14d889bd30f8b1fe0c19e262953f7388dbe77052e"
+checksum = "c4b4e7798d2ff74e29cee344dc490af947ae657d6ab5273dde35d58ce06a4d71"
 dependencies = [
  "aes 0.8.4",
  "aes-gcm",
@@ -2572,9 +2571,7 @@ dependencies = [
  "lighthouse_network",
  "mediatype",
  "pretty_reqwest_error",
- "procfs",
  "proto_array",
- "psutil",
  "reqwest",
  "reqwest-eventsource",
  "sensitive_url",
@@ -3711,6 +3708,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "health_metrics"
+version = "0.1.0"
+dependencies = [
+ "eth2",
+ "metrics",
+ "procfs",
+ "psutil",
+]
+
+[[package]]
 name = "heck"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3944,6 +3951,7 @@ dependencies = [
  "bs58 0.4.0",
  "bytes",
  "directory",
+ "either",
  "eth1",
  "eth2",
  "ethereum_serde_utils",
@@ -3951,6 +3959,7 @@ dependencies = [
  "execution_layer",
  "futures",
  "genesis",
+ "health_metrics",
  "hex",
  "lighthouse_network",
  "lighthouse_version",
@@ -3986,6 +3995,7 @@ name = "http_metrics"
 version = "0.1.0"
 dependencies = [
  "beacon_chain",
+ "health_metrics",
  "lighthouse_network",
  "lighthouse_version",
  "logging",
@@ -4351,7 +4361,7 @@ version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba6a270039626615617f3f36d15fc827041df3b78c439da2cadfa47455a77f2f"
 dependencies = [
- "parity-scale-codec 3.7.0",
+ "parity-scale-codec 3.6.12",
 ]
 
 [[package]]
@@ -4783,7 +4793,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4979f22fdb869068da03c9f7528f8297c6fd2606bc3a4affe42e6a823fdb8da4"
 dependencies = [
  "cfg-if",
- "windows-targets 0.52.6",
+ "windows-targets 0.48.5",
 ]
 
 [[package]]
@@ -5291,6 +5301,7 @@ dependencies = [
  "slasher",
  "slashing_protection",
  "slog",
+ "store",
  "task_executor",
  "tempfile",
  "types",
@@ -5716,6 +5727,7 @@ name = "monitoring_api"
 version = "0.1.0"
 dependencies = [
  "eth2",
+ "health_metrics",
  "lighthouse_version",
  "metrics",
  "regex",
@@ -6267,16 +6279,15 @@ dependencies = [
 
 [[package]]
 name = "parity-scale-codec"
-version = "3.7.0"
+version = "3.6.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8be4817d39f3272f69c59fe05d0535ae6456c2dc2fa1ba02910296c7e0a5c590"
+checksum = "306800abfa29c7f16596b5970a588435e3d5b3149683d00c12b699cc19f895ee"
 dependencies = [
  "arrayvec",
  "bitvec 1.0.1",
  "byte-slice-cast",
  "impl-trait-for-tuples",
- "parity-scale-codec-derive 3.7.0",
- "rustversion",
+ "parity-scale-codec-derive 3.6.12",
  "serde",
 ]
 
@@ -6294,14 +6305,14 @@ dependencies = [
 
 [[package]]
 name = "parity-scale-codec-derive"
-version = "3.7.0"
+version = "3.6.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8781a75c6205af67215f382092b6e0a4ff3734798523e69073d4bcd294ec767b"
+checksum = "d830939c76d294956402033aee57a6da7b438f2294eb94864c37b0569053a42c"
 dependencies = [
  "proc-macro-crate 3.2.0",
  "proc-macro2",
  "quote",
- "syn 2.0.89",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -7346,7 +7357,7 @@ dependencies = [
  "fastrlp",
  "num-bigint",
  "num-traits",
- "parity-scale-codec 3.7.0",
+ "parity-scale-codec 3.6.12",
  "primitive-types 0.12.2",
  "proptest",
  "rand",
@@ -7622,7 +7633,7 @@ checksum = "346a3b32eba2640d17a9cb5927056b08f3de90f65b72fe09402c2ad07d684d0b"
 dependencies = [
  "cfg-if",
  "derive_more 1.0.0",
- "parity-scale-codec 3.7.0",
+ "parity-scale-codec 3.6.12",
  "scale-info-derive",
 ]
 
@@ -8419,6 +8430,7 @@ dependencies = [
  "metrics",
  "parking_lot 0.12.3",
  "rand",
+ "redb",
  "safe_arith",
  "serde",
  "slog",
@@ -9561,7 +9573,6 @@ dependencies = [
  "bls",
  "deposit_contract",
  "derivative",
- "directory",
  "eth2_keystore",
  "filesystem",
  "hex",
@@ -9589,6 +9600,7 @@ dependencies = [
  "filesystem",
  "futures",
  "graffiti_file",
+ "health_metrics",
  "initialized_validators",
  "itertools 0.10.5",
  "lighthouse_version",
@@ -9621,6 +9633,7 @@ dependencies = [
 name = "validator_http_metrics"
 version = "0.1.0"
 dependencies = [
+ "health_metrics",
  "lighthouse_version",
  "malloc_utils",
  "metrics",
@@ -9799,7 +9812,6 @@ dependencies = [
 name = "warp_utils"
 version = "0.1.0"
 dependencies = [
- "beacon_chain",
  "bytes",
  "eth2",
  "headers",
@@ -9808,7 +9820,6 @@ dependencies = [
  "serde",
  "serde_array_query",
  "serde_json",
- "state_processing",
  "tokio",
  "types",
  "warp",
