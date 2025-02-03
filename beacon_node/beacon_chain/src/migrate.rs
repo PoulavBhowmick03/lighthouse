@@ -114,7 +114,7 @@ pub enum PruningError {
     UnexpectedUnequalStateRoots,
     MissingSummaryForFinalizedCheckpoint(Hash256),
     MissingBlindedBlock(Hash256),
-    SummariesDagError(SummariesDagError),
+    SummariesDagError(&'static str, SummariesDagError),
     EmptyFinalizedStates,
     EmptyFinalizedBlocks,
 }
@@ -494,6 +494,7 @@ impl<E: EthSpec, Hot: ItemStore<E>, Cold: ItemStore<E>> BackgroundMigrator<E, Ho
                 .into_iter()
                 .map(|(state_root, summary)| {
                     let block_root = summary.latest_block_root;
+                    // This error should never happen unless we break a DB invariant
                     let block = store
                         .get_blinded_block(&block_root)?
                         .ok_or(PruningError::MissingBlindedBlock(block_root))?;
@@ -541,7 +542,7 @@ impl<E: EthSpec, Hot: ItemStore<E>, Cold: ItemStore<E>> BackgroundMigrator<E, Ho
 
             (
                 StateSummariesDAG::new_from_v22(state_summaries)
-                    .map_err(PruningError::SummariesDagError)?,
+                    .map_err(|e| PruningError::SummariesDagError("creating StateSumariesDAG", e))?,
                 BlockSummariesDAG::new(&blocks),
             )
         };
@@ -565,7 +566,9 @@ impl<E: EthSpec, Hot: ItemStore<E>, Cold: ItemStore<E>> BackgroundMigrator<E, Ho
                 std::iter::once(new_finalized_state_hash).chain(
                     state_summaries_dag
                         .descendants_of(&new_finalized_state_hash)
-                        .map_err(PruningError::SummariesDagError)?,
+                        .map_err(|e| {
+                            PruningError::SummariesDagError("state summaries descendants_of", e)
+                        })?,
                 ),
             );
 
@@ -582,6 +585,7 @@ impl<E: EthSpec, Hot: ItemStore<E>, Cold: ItemStore<E>> BackgroundMigrator<E, Ho
                         // state_summaries_dag
                         let summary = state_summaries_dag.get(state_root).ok_or(
                             PruningError::SummariesDagError(
+                                "state summaries get summary",
                                 SummariesDagError::MissingStateSummary(*state_root),
                             ),
                         )?;
@@ -593,7 +597,7 @@ impl<E: EthSpec, Hot: ItemStore<E>, Cold: ItemStore<E>> BackgroundMigrator<E, Ho
         // Note: ancestors_of includes the finalized state root
         let newly_finalized_state_summaries = state_summaries_dag
             .ancestors_of(new_finalized_state_hash)
-            .map_err(PruningError::SummariesDagError)?;
+            .map_err(|e| PruningError::SummariesDagError("state summaries ancestors_of", e))?;
         let newly_finalized_state_roots = newly_finalized_state_summaries
             .iter()
             .map(|(root, _)| *root)
@@ -607,7 +611,7 @@ impl<E: EthSpec, Hot: ItemStore<E>, Cold: ItemStore<E>> BackgroundMigrator<E, Ho
         // Note: ancestors_of includes the finalized block
         let newly_finalized_blocks = block_summaries_dag
             .ancestors_of(new_finalized_checkpoint.root)
-            .map_err(PruningError::SummariesDagError)?;
+            .map_err(|e| PruningError::SummariesDagError("block summaries ancestors_of", e))?;
         let newly_finalized_block_roots = newly_finalized_blocks
             .iter()
             .map(|(root, _)| *root)
