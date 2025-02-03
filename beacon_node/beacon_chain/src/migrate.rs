@@ -557,18 +557,38 @@ impl<E: EthSpec, Hot: ItemStore<E>, Cold: ItemStore<E>> BackgroundMigrator<E, Ho
             );
         }
 
-        // From the DAG compute the list of roots that descend from finalized root up to the
-        // split slot.
+        // `new_finalized_state_hash` is the *state at the slot of the finalized epoch*,
+        // rather than the state of the latest finalized block. These two values will only
+        // differ when the first slot of the finalized epoch is a skip slot.
+        let finalized_and_descendant_state_roots_of_finalized_checkpoint =
+            HashSet::<Hash256>::from_iter(
+                std::iter::once(new_finalized_state_hash).chain(
+                    state_summaries_dag
+                        .descendants_of(&new_finalized_state_hash)
+                        .map_err(PruningError::SummariesDagError)?,
+                ),
+            );
 
-        let finalized_and_descendant_block_roots = HashSet::<Hash256>::from_iter(
-            std::iter::once(new_finalized_checkpoint.root).chain(
-                // Note: The sanity check above for existance of at least one summary with
-                // new_finalized_checkpoint.root should ensure that this call never errors
-                block_summaries_dag
-                    .descendant_block_roots_of(&new_finalized_checkpoint.root)
-                    .map_err(PruningError::SummariesDagError)?,
-            ),
-        );
+        // Collect all `latest_block_roots` of the
+        // finalized_and_descendant_state_roots_of_finalized_checkpoint set. Includes the finalized
+        // block as `new_finalized_state_hash` always has a latest block root the finalized block.
+        let finalized_and_descendant_block_roots_of_finalized_checkpoint =
+            HashSet::<Hash256>::from_iter(
+                finalized_and_descendant_state_roots_of_finalized_checkpoint
+                    .iter()
+                    .map(|state_root| {
+                        // `.get()` should never error, we just constructed
+                        // finalized_and_descendant_state_roots_of_finalized_checkpoint from the
+                        // state_summaries_dag
+                        let summary = state_summaries_dag.get(state_root).ok_or(
+                            PruningError::SummariesDagError(
+                                SummariesDagError::MissingStateSummary(*state_root),
+                            ),
+                        )?;
+                        Ok(summary.latest_block_root)
+                    })
+                    .collect::<Result<Vec<_>, PruningError>>()?,
+            );
 
         // Note: ancestors_of includes the finalized state root
         let newly_finalized_state_summaries = state_summaries_dag
@@ -603,34 +623,49 @@ impl<E: EthSpec, Hot: ItemStore<E>, Cold: ItemStore<E>> BackgroundMigrator<E, Ho
         let mut blocks_to_prune: HashSet<Hash256> = HashSet::new();
         let mut states_to_prune: HashSet<(Slot, Hash256)> = HashSet::new();
 
-        for (slot, summaries) in state_summaries_dag.summaries_by_slot_ascending() {
+        // Consider the following block tree where we finalize block `[0]` at the checkpoint `(f)`.
+        // There's a block `[3]` that descendends from the finalized block but NOT from the
+        // finalized checkpoint. The block tree rooted in `[3]` conflicts with finality and must be
+        // pruned. Therefore we collect all state summaries descendant of `(f)`.
+        //
+        //           finalize epoch boundary
+        //           |    /-------[2]-----
+        // [0]-------|--(f)--[1]----------
+        //  \---[3]--|-----------------[4]
+        //           |
+
+        for (_, summaries) in state_summaries_dag.summaries_by_slot_ascending() {
             for (state_root, summary) in summaries {
-                let should_prune =
-                    if finalized_and_descendant_block_roots.contains(&summary.latest_block_root) {
-                        // Keep this state is the post state of a viable head, or a state advance from a
-                        // viable head.
-                        false
-                    } else {
-                        // Everything else, prune
-                        true
-                    };
+                let should_prune = if finalized_and_descendant_state_roots_of_finalized_checkpoint
+                    .contains(&state_root)
+                {
+                    // This state is a viable descendant of the finalized checkpoint, so does not
+                    // conflict with finality and can be built on or become a head
+                    false
+                } else {
+                    // Everything else, prune
+                    true
+                };
 
                 if should_prune {
                     // States are migrated into the cold DB in the migrate step. All hot states
                     // prior to finalized can be pruned from the hot DB columns
-                    states_to_prune.insert((slot, state_root));
+                    states_to_prune.insert((summary.slot, state_root));
                 }
             }
         }
 
         for (block_root, slot) in block_summaries_dag.iter() {
             // Blocks both finalized and unfinalized are in the same DB column. We must only
-            // prune blocks from abandoned forks. Deriving block pruning from state
-            // summaries is tricky since now we keep some hot state summaries beyond
-            // finalization. We will only prune blocks that still have an associated hot
-            // state summary, are above prior finalization and not in the canonical chain.
-            let should_prune = if finalized_and_descendant_block_roots.contains(&block_root) {
-                // Keep unfinalized blocks descendant of finalized + finalized block itself
+            // prune blocks from abandoned forks. Note that block pruning and state pruning differ.
+            // The blocks DB column is shared for hot and cold data, while the states have different
+            // columns. Thus, we only prune unviable blocks or from abandoned forks.
+            let should_prune = if finalized_and_descendant_block_roots_of_finalized_checkpoint
+                .contains(&block_root)
+            {
+                // Keep unfinalized blocks descendant of finalized checkpoint + finalized block itself
+                // Note that we anchor this set on the finalied checkpoint instead of the finalized
+                // block. A diagram above shows a relevant example.
                 false
             } else if newly_finalized_block_roots.contains(&block_root) {
                 // Keep recently finalized blocks
@@ -664,7 +699,9 @@ impl<E: EthSpec, Hot: ItemStore<E>, Cold: ItemStore<E>> BackgroundMigrator<E, Ho
             "newly_finalized_state_roots" => newly_finalized_state_roots.len(),
             "newly_finalized_states_min_slot" => newly_finalized_states_min_slot,
             "state_summaries_count" => state_summaries_dag.summaries_count(),
-            "finalized_and_descendant_block_roots" => finalized_and_descendant_block_roots.len(),
+            "state_summaries_dag_roots" => ?state_summaries_dag_roots,
+            "finalized_and_descendant_state_roots_of_finalized_checkpoint" => finalized_and_descendant_state_roots_of_finalized_checkpoint.len(),
+            "finalized_and_descendant_state_roots_of_finalized_checkpoint" => finalized_and_descendant_state_roots_of_finalized_checkpoint.len(),
             "blocks_to_prune_count" => blocks_to_prune.len(),
             "states_to_prune_count" => states_to_prune.len(),
             "blocks_to_prune" => ?blocks_to_prune,

@@ -153,6 +153,10 @@ impl StateSummariesDAG {
         Ok(Self::new(state_summaries))
     }
 
+    pub fn get(&self, state_root: &Hash256) -> Option<&DAGStateSummary> {
+        self.state_summaries_by_state_root.get(state_root)
+    }
+
     /// Returns a vec of state summaries that have an unknown parent when forming the DAG tree
     pub fn tree_roots(&self) -> Vec<(Hash256, DAGStateSummary)> {
         self.state_summaries_by_state_root
