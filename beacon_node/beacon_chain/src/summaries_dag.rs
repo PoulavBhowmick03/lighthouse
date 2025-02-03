@@ -24,6 +24,9 @@ pub struct StateSummariesDAG {
     state_summaries_by_state_root: HashMap<Hash256, DAGStateSummary>,
     // block_root -> state slot -> (state_root, state summary)
     state_summaries_by_block_root: HashMap<Hash256, BTreeMap<Slot, (Hash256, DAGStateSummary)>>,
+    // parent_state_root -> Vec<children_state_root>
+    // cached value to prevent having to recompute in each recursive call into `descendants_of`
+    child_state_roots: HashMap<Hash256, Vec<Hash256>>,
 }
 
 #[derive(Debug)]
@@ -32,6 +35,7 @@ pub enum Error {
     MissingStateSummaryByBlockRoot(Hash256),
     MissingStateSummaryAtSlot(Hash256, Slot),
     MissingChildBlockRoot(Hash256),
+    MissingChildStateRoot(Hash256),
     MissingBlock(Hash256),
     RequestedSlotAboveSummary(Hash256, Slot),
     RootUnknownPreviousStateRoot(Hash256, Slot),
@@ -40,8 +44,10 @@ pub enum Error {
 impl StateSummariesDAG {
     pub fn new(state_summaries: Vec<(Hash256, DAGStateSummary)>) -> Self {
         // Group them by latest block root, and sorted state slot
-        let mut state_summaries_by_block_root = HashMap::<_, BTreeMap<_, _>>::new();
         let mut state_summaries_by_state_root = HashMap::new();
+        let mut state_summaries_by_block_root = HashMap::<_, BTreeMap<_, _>>::new();
+        let mut child_state_roots = HashMap::<_, Vec<_>>::new();
+
         for (state_root, summary) in state_summaries.into_iter() {
             let summaries = state_summaries_by_block_root
                 .entry(summary.latest_block_root)
@@ -51,11 +57,19 @@ impl StateSummariesDAG {
             summaries.insert(summary.slot, (state_root, summary));
 
             state_summaries_by_state_root.insert(state_root, summary);
+
+            child_state_roots
+                .entry(summary.previous_state_root)
+                .or_default()
+                .push(state_root);
+            // Add empty entry for the child state
+            child_state_roots.entry(state_root).or_default();
         }
 
         Self {
             state_summaries_by_state_root,
             state_summaries_by_block_root,
+            child_state_roots,
         }
     }
 
@@ -141,16 +155,14 @@ impl StateSummariesDAG {
 
     /// Returns a vec of state summaries that have an unknown parent when forming the DAG tree
     pub fn tree_roots(&self) -> Vec<(Hash256, DAGStateSummary)> {
-        self.state_summaries_by_block_root
-            .values()
-            .flat_map(|summaries| {
-                summaries.values().filter_map(|(state_root, summary)| {
-                    if summary.previous_state_root == Hash256::ZERO {
-                        Some((*state_root, *summary))
-                    } else {
-                        None
-                    }
-                })
+        self.state_summaries_by_state_root
+            .iter()
+            .filter_map(|(state_root, summary)| {
+                if summary.previous_state_root == Hash256::ZERO {
+                    Some((*state_root, *summary))
+                } else {
+                    None
+                }
             })
             .collect()
     }
@@ -164,13 +176,9 @@ impl StateSummariesDAG {
 
     pub fn summaries_by_slot_ascending(&self) -> BTreeMap<Slot, Vec<(Hash256, DAGStateSummary)>> {
         let mut summaries = BTreeMap::<Slot, Vec<_>>::new();
-        for (slot, (state_root, summary)) in self
-            .state_summaries_by_block_root
-            .values()
-            .flat_map(|slot_map| slot_map.iter())
-        {
+        for (state_root, summary) in self.state_summaries_by_state_root.iter() {
             summaries
-                .entry(*slot)
+                .entry(summary.slot)
                 .or_default()
                 .push((*state_root, *summary));
         }
@@ -244,6 +252,20 @@ impl StateSummariesDAG {
             }
         }
     }
+
+    /// Returns of the descendant state summaries roots given an initiail state root.
+    pub fn descendants_of(&self, query_state_root: &Hash256) -> Result<Vec<Hash256>, Error> {
+        let mut descendants = vec![];
+        for child_root in self
+            .child_state_roots
+            .get(query_state_root)
+            .ok_or(Error::MissingChildStateRoot(*query_state_root))?
+        {
+            descendants.push(*child_root);
+            descendants.extend(self.descendants_of(child_root)?);
+        }
+        Ok(descendants)
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -253,10 +275,11 @@ pub struct DAGBlockSummary {
 }
 
 pub struct BlockSummariesDAG {
-    // parent_block_root -> Vec<children_block_root>
-    child_block_roots: HashMap<Hash256, Vec<(Hash256, DAGBlockSummary)>>,
     // block_root -> block
     blocks_by_block_root: HashMap<Hash256, DAGBlockSummary>,
+    // parent_block_root -> Vec<children_block_root>
+    // cached value to prevent having to recompute in each recursive call into `descendants_of`
+    child_block_roots: HashMap<Hash256, Vec<Hash256>>,
 }
 
 impl BlockSummariesDAG {
@@ -269,7 +292,7 @@ impl BlockSummariesDAG {
             child_block_roots
                 .entry(block.parent_root)
                 .or_default()
-                .push((*block_root, *block));
+                .push(*block_root);
             // Add empty entry for the child block
             child_block_roots.entry(*block_root).or_default();
 
@@ -284,7 +307,7 @@ impl BlockSummariesDAG {
 
     pub fn descendant_block_roots_of(&self, block_root: &Hash256) -> Result<Vec<Hash256>, Error> {
         let mut descendants = vec![];
-        for (child_root, _) in self
+        for child_root in self
             .child_block_roots
             .get(block_root)
             .ok_or(Error::MissingChildBlockRoot(*block_root))?
