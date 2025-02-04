@@ -889,6 +889,21 @@ where
         state.get_block_root(slot).unwrap() == state.get_block_root(slot - 1).unwrap()
     }
 
+    pub fn knows_head(&self, block_hash: &SignedBeaconBlockHash) -> bool {
+        self.chain
+            .heads()
+            .unwrap()
+            .iter()
+            .any(|head| head.0 == Into::<Hash256>::into(*block_hash))
+    }
+
+    pub fn assert_knows_head(&self, head_block_root: Hash256) {
+        let heads = self.chain.heads().unwrap();
+        if !heads.iter().any(|head| head.0 == head_block_root) {
+            panic!("Expected to known head block root {head_block_root:?}, known heads {heads:?}");
+        }
+    }
+
     pub async fn make_blinded_block(
         &self,
         state: BeaconState<E>,

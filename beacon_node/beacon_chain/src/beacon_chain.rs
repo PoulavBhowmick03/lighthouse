@@ -1409,22 +1409,16 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
     /// Returns the current heads of the `BeaconChain`. For the canonical head, see `Self::head`.
     ///
     /// Returns `(block_root, block_slot)`.
-    pub fn heads(&self) -> Vec<(Hash256, Slot)> {
-        let head_slot = self.canonical_head.cached_head().head_slot();
-        self.canonical_head
+    pub fn heads(&self) -> Result<Vec<(Hash256, Slot)>, Error> {
+        let current_slot = self.slot()?;
+        Ok(self
+            .canonical_head
             .fork_choice_read_lock()
             .proto_array()
-            .viable_heads::<T::EthSpec>(head_slot)
+            .viable_heads::<T::EthSpec>(current_slot)
             .iter()
             .map(|node| (node.root, node.slot))
-            .collect()
-    }
-
-    /// Only used in tests.
-    pub fn knows_head(&self, block_hash: &SignedBeaconBlockHash) -> bool {
-        self.heads()
-            .iter()
-            .any(|head| head.0 == Into::<Hash256>::into(*block_hash))
+            .collect())
     }
 
     /// Returns the `BeaconState` at the given slot.
@@ -6993,7 +6987,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         // Canonical head needs to be processed first as otherwise finalized blocks aren't detected
         // properly.
         let heads = {
-            let mut heads = self.heads();
+            let mut heads = self.heads().expect("should be able to read time");
             let canonical_head_index = heads
                 .iter()
                 .position(|(block_hash, _)| *block_hash == canonical_head_hash)
