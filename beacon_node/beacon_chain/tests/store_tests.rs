@@ -2978,7 +2978,7 @@ async fn revert_minority_fork_on_resume() {
     assert_eq!(resumed_harness.head_slot(), fork_slot - 1);
 
     // Head track should know the canonical head and the rogue head.
-    assert_eq!(resumed_harness.chain.heads().unwrap().len(), 2);
+    assert_eq!(resumed_harness.chain.heads().len(), 2);
     resumed_harness.assert_knows_head(resumed_harness.head_block_root());
 
     // Apply blocks from the majority chain and trigger finalization.
@@ -3000,8 +3000,8 @@ async fn revert_minority_fork_on_resume() {
     assert!(advanced_split_slot > initial_split_slot);
 
     // Check that there is only a single head now matching harness2 (the minority chain is gone).
-    let heads = resumed_harness.chain.heads().unwrap();
-    assert_eq!(heads, harness2.chain.heads().unwrap());
+    let heads = resumed_harness.chain.heads();
+    assert_eq!(heads, harness2.chain.heads());
     assert_eq!(heads.len(), 1);
 }
 
@@ -3484,11 +3484,7 @@ fn assert_chains_pretty_much_the_same<T: BeaconChainTypes>(a: &BeaconChain<T>, b
     let mut b_head_state = b_head.beacon_state.clone();
     b_head_state.drop_all_caches().unwrap();
     assert_eq!(a_head_state, b_head_state, "head states should be equal");
-    assert_eq!(
-        a.heads().unwrap(),
-        b.heads().unwrap(),
-        "heads() should be equal"
-    );
+    assert_eq!(a.heads(), b.heads(), "heads() should be equal");
     assert_eq!(
         a.genesis_block_root, b.genesis_block_root,
         "genesis_block_root should be equal"

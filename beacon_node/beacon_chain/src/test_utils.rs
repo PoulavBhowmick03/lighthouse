@@ -892,17 +892,16 @@ where
     pub fn knows_head(&self, block_hash: &SignedBeaconBlockHash) -> bool {
         self.chain
             .heads()
-            .unwrap()
             .iter()
-            .any(|head| head.0 == Into::<Hash256>::into(*block_hash))
+            .any(|(head, _)| *head == Hash256::from(*block_hash))
     }
 
     pub fn assert_knows_head(&self, head_block_root: Hash256) {
-        let heads = self.chain.heads().unwrap();
-        if !heads.iter().any(|head| head.0 == head_block_root) {
+        let heads = self.chain.heads();
+        if !heads.iter().any(|(head, _)| *head == head_block_root) {
             let fork_choice = self.chain.canonical_head.fork_choice_read_lock();
             if heads.is_empty() {
-                let nodes = fork_choice.proto_array().core_proto_array().nodes;
+                let nodes = &fork_choice.proto_array().core_proto_array().nodes;
                 panic!("Expected to known head block root {head_block_root:?}, but heads is empty. Nodes: {nodes:#?}");
             } else {
                 panic!(

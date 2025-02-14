@@ -1409,16 +1409,17 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
     /// Returns the current heads of the `BeaconChain`. For the canonical head, see `Self::head`.
     ///
     /// Returns `(block_root, block_slot)`.
-    pub fn heads(&self) -> Result<Vec<(Hash256, Slot)>, Error> {
-        let current_slot = self.slot()?;
-        Ok(self
-            .canonical_head
+    pub fn heads(&self) -> Vec<(Hash256, Slot)> {
+        // Fetching the current slot is only likely to fail pre-genesis. Default to 0 in this case
+        // rather than erroring, so that the heads HTTP API endpoint can work pre-genesis.
+        let current_slot = self.slot().unwrap_or_default();
+        self.canonical_head
             .fork_choice_read_lock()
             .proto_array()
             .viable_heads::<T::EthSpec>(current_slot)
             .iter()
             .map(|node| (node.root, node.slot))
-            .collect())
+            .collect()
     }
 
     /// Returns the `BeaconState` at the given slot.
@@ -6987,7 +6988,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         // Canonical head needs to be processed first as otherwise finalized blocks aren't detected
         // properly.
         let heads = {
-            let mut heads = self.heads().expect("should be able to read time");
+            let mut heads = self.heads();
             let canonical_head_index = heads
                 .iter()
                 .position(|(block_hash, _)| *block_hash == canonical_head_hash)
