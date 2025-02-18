@@ -2990,9 +2990,13 @@ async fn revert_minority_fork_on_resume() {
     resumed_harness.chain.recompute_head_at_current_slot().await;
     assert_eq!(resumed_harness.head_slot(), fork_slot - 1);
 
-    // Head track should know the canonical head and the rogue head.
-    assert_eq!(resumed_harness.chain.heads().len(), 2);
-    resumed_harness.assert_knows_head(resumed_harness.head_block_root());
+    // Fork choice should only know the canonical head. When we reverted the head we also should
+    // have called `reset_fork_choice_to_finalization` which rebuilds fork choice from scratch
+    // without the reverted block.
+    assert_eq!(
+        resumed_harness.chain.heads(),
+        vec![(resumed_harness.head_block_root(), fork_slot - 1)]
+    );
 
     // Apply blocks from the majority chain and trigger finalization.
     let initial_split_slot = resumed_harness.chain.store.get_split_slot();
