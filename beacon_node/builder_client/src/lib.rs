@@ -7,8 +7,7 @@ use eth2::types::{
 use eth2::types::{FullPayloadContents, SignedBlindedBeaconBlock};
 pub use eth2::Error;
 use eth2::{
-    ok_or_error, StatusCode, CONSENSUS_VERSION_HEADER, CONTENT_TYPE_HEADER,
-    JSON_CONTENT_TYPE_HEADER, SSZ_CONTENT_TYPE_HEADER,
+    ok_or_error, StatusCode, CONSENSUS_VERSION_HEADER, CONTENT_TYPE_HEADER, SSZ_CONTENT_TYPE_HEADER,
 };
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT};
 use reqwest::{IntoUrl, Response};
@@ -28,6 +27,9 @@ pub const DEFAULT_GET_HEADER_TIMEOUT_MILLIS: u64 = 1000;
 
 /// Default user agent for HTTP requests.
 pub const DEFAULT_USER_AGENT: &str = lighthouse_version::VERSION;
+
+/// The value we set on the `ACCEPT` http header to indicate a preference for ssz response.
+pub const PREFERENCE_ACCEPT_VALUE: &str = "application/octet-stream;q=1.0,application/json;q=0.9";
 
 #[derive(Clone)]
 pub struct Timeouts {
@@ -226,6 +228,8 @@ impl BuilderHttpClient {
             HeaderValue::from_static(SSZ_CONTENT_TYPE_HEADER),
         );
 
+        headers.insert(ACCEPT, HeaderValue::from_static(PREFERENCE_ACCEPT_VALUE));
+
         let response = builder
             .headers(headers)
             .body(ssz_body)
@@ -362,12 +366,8 @@ impl BuilderHttpClient {
             .push(pubkey.as_hex_string().as_str());
 
         let mut headers = HeaderMap::new();
-        if let Ok(ssz_content_type_header) = HeaderValue::from_str(&format!(
-            "{}; q=1.0,{}; q=0.9",
-            SSZ_CONTENT_TYPE_HEADER, JSON_CONTENT_TYPE_HEADER
-        )) {
-            headers.insert(ACCEPT, ssz_content_type_header);
-        };
+        // We accept ssz responses by default so indicate that in the accept header
+        headers.insert(ACCEPT, HeaderValue::from_static(PREFERENCE_ACCEPT_VALUE));
 
         let resp = self
             .get_with_header(path, self.timeouts.get_header, headers)
