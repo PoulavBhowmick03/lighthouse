@@ -159,10 +159,10 @@ impl BuilderHttpClient {
     }
 
     /// Return `true` if the most recently received response from the builder had SSZ Content-Type.
-    ///
+    /// Return `false` otherwise.
     /// Also returns `false` if we have explicitly disabled ssz.
     pub fn is_ssz_enabled(&self) -> bool {
-        self.disable_ssz && self.ssz_used.load(Ordering::SeqCst)
+        !self.disable_ssz && self.ssz_used.load(Ordering::SeqCst)
     }
 
     async fn get_with_timeout<T: DeserializeOwned, U: IntoUrl>(
