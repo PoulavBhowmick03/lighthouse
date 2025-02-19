@@ -7,7 +7,8 @@ use eth2::types::{
 use eth2::types::{FullPayloadContents, SignedBlindedBeaconBlock};
 pub use eth2::Error;
 use eth2::{
-    ok_or_error, StatusCode, CONSENSUS_VERSION_HEADER, CONTENT_TYPE_HEADER, SSZ_CONTENT_TYPE_HEADER,
+    ok_or_error, StatusCode, CONSENSUS_VERSION_HEADER, CONTENT_TYPE_HEADER,
+    JSON_CONTENT_TYPE_HEADER, SSZ_CONTENT_TYPE_HEADER,
 };
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT};
 use reqwest::{IntoUrl, Response};
@@ -59,7 +60,12 @@ pub struct BuilderHttpClient {
     server: SensitiveUrl,
     timeouts: Timeouts,
     user_agent: String,
-    ssz_enabled: Arc<AtomicBool>,
+    /// Only use json for all requests/responses types.
+    disable_ssz: bool,
+    /// Indicates that the `get_header`` response had content-type ssz
+    /// so we can set content-type header to ssz to make the `submit_blinded_blocks`
+    /// request.
+    ssz_used: Arc<AtomicBool>,
 }
 
 impl BuilderHttpClient {
@@ -67,6 +73,7 @@ impl BuilderHttpClient {
         server: SensitiveUrl,
         user_agent: Option<String>,
         builder_header_timeout: Option<Duration>,
+        disable_ssz: bool,
     ) -> Result<Self, Error> {
         let user_agent = user_agent.unwrap_or(DEFAULT_USER_AGENT.to_string());
         let client = reqwest::Client::builder().user_agent(&user_agent).build()?;
@@ -75,7 +82,8 @@ impl BuilderHttpClient {
             server,
             timeouts: Timeouts::new(builder_header_timeout),
             user_agent,
-            ssz_enabled: Arc::new(false.into()),
+            disable_ssz,
+            ssz_used: Arc::new(false.into()),
         })
     }
 
@@ -126,7 +134,7 @@ impl BuilderHttpClient {
 
         let Ok(Some(fork_name)) = self.fork_name_from_header(&headers) else {
             // if no fork version specified, attempt to fallback to JSON
-            self.ssz_enabled.store(false, Ordering::SeqCst);
+            self.ssz_used.store(false, Ordering::SeqCst);
             return serde_json::from_slice(&response_bytes).map_err(Error::InvalidJson);
         };
 
@@ -134,7 +142,7 @@ impl BuilderHttpClient {
 
         match content_type {
             ContentType::Ssz => {
-                self.ssz_enabled.store(true, Ordering::SeqCst);
+                self.ssz_used.store(true, Ordering::SeqCst);
                 T::from_ssz_bytes_by_fork(&response_bytes, fork_name)
                     .map(|data| ForkVersionedResponse {
                         version: Some(fork_name),
@@ -144,15 +152,17 @@ impl BuilderHttpClient {
                     .map_err(Error::InvalidSsz)
             }
             ContentType::Json => {
-                self.ssz_enabled.store(false, Ordering::SeqCst);
+                self.ssz_used.store(false, Ordering::SeqCst);
                 serde_json::from_slice(&response_bytes).map_err(Error::InvalidJson)
             }
         }
     }
 
     /// Return `true` if the most recently received response from the builder had SSZ Content-Type.
+    ///
+    /// Also returns `false` if we have explicitly disabled ssz.
     pub fn is_ssz_enabled(&self) -> bool {
-        self.ssz_enabled.load(Ordering::SeqCst)
+        self.disable_ssz && self.ssz_used.load(Ordering::SeqCst)
     }
 
     async fn get_with_timeout<T: DeserializeOwned, U: IntoUrl>(
@@ -366,8 +376,12 @@ impl BuilderHttpClient {
             .push(pubkey.as_hex_string().as_str());
 
         let mut headers = HeaderMap::new();
-        // We accept ssz responses by default so indicate that in the accept header
-        headers.insert(ACCEPT, HeaderValue::from_static(PREFERENCE_ACCEPT_VALUE));
+        if self.disable_ssz {
+            headers.insert(ACCEPT, HeaderValue::from_static(JSON_CONTENT_TYPE_HEADER));
+        } else {
+            // We accept ssz responses by default so indicate that in the accept header
+            headers.insert(ACCEPT, HeaderValue::from_static(PREFERENCE_ACCEPT_VALUE));
+        }
 
         let resp = self
             .get_with_header(path, self.timeouts.get_header, headers)
