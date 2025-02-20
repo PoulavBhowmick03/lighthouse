@@ -1464,7 +1464,7 @@ pub fn cli_app() -> Command {
             Arg::new("builder-disable-ssz")
                 .long("builder-disable-ssz")
                 .value_name("BOOLEAN")
-                .help("Disables sending requests using ssz over the builder api")
+                .help("Disables sending requests using SSZ over the builder API.")
                 .requires("builder")
                 .action(ArgAction::SetTrue)
                 .display_order(0)
