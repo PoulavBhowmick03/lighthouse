@@ -1042,28 +1042,18 @@ impl ProtoArray {
             .map(|node| node.root)
     }
 
-    /// Returns all nodes that have zero children and are viable heads
-    pub fn viable_heads<E: EthSpec>(&self, current_slot: Slot) -> Vec<&ProtoNode> {
-        self.nodes_without_children()
-            .into_iter()
-            .filter_map(|index| {
-                // An unknown index is not a viable head
-                if let Some(node) = self.nodes.get(index) {
-                    if self.node_is_viable_for_head::<E>(node, current_slot) {
-                        return Some(node);
-                    }
-                }
-                None
-            })
-            .collect()
-    }
-
-    /// Returns all node indices that have zero children. May include unviable nodes.
-    fn nodes_without_children(&self) -> Vec<usize> {
+    /// Returns all nodes that have zero children and are descended from the finalized checkpoint.
+    ///
+    /// For informational purposes like the beacon HTTP API, we use this as the list of known heads,
+    /// even though some of them might not be viable. We do this to maintain consistency between the
+    /// definition of "head" used by pruning (which does not consider viability) and fork choice.
+    pub fn heads_descended_from_finalization<E: EthSpec>(&self) -> Vec<&ProtoNode> {
         self.nodes
             .iter()
-            .enumerate()
-            .filter_map(|(i, node)| node.best_child.is_none().then_some(i))
+            .filter(|node| {
+                node.best_child.is_none()
+                    && self.is_finalized_checkpoint_or_descendant::<E>(node.root)
+            })
             .collect()
     }
 }

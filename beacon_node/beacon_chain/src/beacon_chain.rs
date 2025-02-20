@@ -1410,13 +1410,10 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
     ///
     /// Returns `(block_root, block_slot)`.
     pub fn heads(&self) -> Vec<(Hash256, Slot)> {
-        // Fetching the current slot is only likely to fail pre-genesis. Default to 0 in this case
-        // rather than erroring, so that the heads HTTP API endpoint can work pre-genesis.
-        let current_slot = self.slot().unwrap_or_default();
         self.canonical_head
             .fork_choice_read_lock()
             .proto_array()
-            .viable_heads::<T::EthSpec>(current_slot)
+            .heads_descended_from_finalization::<T::EthSpec>()
             .iter()
             .map(|node| (node.root, node.slot))
             .collect()

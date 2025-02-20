@@ -64,7 +64,7 @@ pub fn downgrade_from_v23<T: BeaconChainTypes>(
 
     // TODO: what value to choose here?
     let reset_payload_statuses = ResetPayloadStatuses::OnlyWithInvalidPayload;
-    let mut fork_choice = ForkChoice::from_persisted(
+    let fork_choice = ForkChoice::from_persisted(
         persisted_fork_choice.fork_choice,
         reset_payload_statuses,
         fc_store,
@@ -75,21 +75,9 @@ pub fn downgrade_from_v23<T: BeaconChainTypes>(
         Error::MigrationError(format!("Error loading fork choice from persisted: {e:?}"))
     })?;
 
-    // TODO: initialize clock
-    let current_slot = Slot::new(0);
-    let head_block_root = fork_choice
-        .get_head(current_slot, &db.spec)
-        .map_err(|e| Error::MigrationError(format!("Error computing get_head: {e:?}")))?;
-
-    let head_proto_block = fork_choice
-        .get_block(&head_block_root)
-        .ok_or(Error::MigrationError(format!(
-            "HeadBlockMissingFromForkChoice({head_block_root:?})"
-        )))?;
-
     let heads = fork_choice
         .proto_array()
-        .viable_heads::<T::EthSpec>(head_proto_block.slot);
+        .heads_descended_from_finalization::<T::EthSpec>();
 
     let head_roots = heads.iter().map(|node| node.root).collect();
     let head_slots = heads.iter().map(|node| node.slot).collect();

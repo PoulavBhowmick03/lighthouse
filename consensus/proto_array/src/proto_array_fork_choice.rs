@@ -886,9 +886,9 @@ impl ProtoArrayForkChoice {
         &mut self.proto_array
     }
 
-    /// Returns all nodes that have zero children and are viable heads
-    pub fn viable_heads<E: EthSpec>(&self, current_slot: Slot) -> Vec<&ProtoNode> {
-        self.proto_array.viable_heads::<E>(current_slot)
+    /// Returns all nodes that have zero children and are descended from the finalized checkpoint.
+    pub fn heads_descended_from_finalization<E: EthSpec>(&self) -> Vec<&ProtoNode> {
+        self.proto_array.heads_descended_from_finalization::<E>()
     }
 }
 
