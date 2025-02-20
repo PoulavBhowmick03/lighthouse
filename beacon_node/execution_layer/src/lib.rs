@@ -1912,7 +1912,7 @@ impl<E: EthSpec> ExecutionLayer<E> {
         if let Some(builder) = self.builder() {
             let (payload_result, duration) =
                 timed_future(metrics::POST_BLINDED_PAYLOAD_BUILDER, async {
-                    let ssz_enabled = builder.is_ssz_enabled();
+                    let ssz_enabled = builder.is_ssz_available();
                     debug!(
                         self.log(),
                         "Calling submit_blinded_block on builder";

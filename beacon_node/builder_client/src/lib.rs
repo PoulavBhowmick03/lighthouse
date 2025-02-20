@@ -64,10 +64,10 @@ pub struct BuilderHttpClient {
     user_agent: String,
     /// Only use json for all requests/responses types.
     disable_ssz: bool,
-    /// Indicates that the `get_header`` response had content-type ssz
+    /// Indicates that the `get_header` response had content-type ssz
     /// so we can set content-type header to ssz to make the `submit_blinded_blocks`
     /// request.
-    ssz_used: Arc<AtomicBool>,
+    ssz_available: Arc<AtomicBool>,
 }
 
 impl BuilderHttpClient {
@@ -85,7 +85,7 @@ impl BuilderHttpClient {
             timeouts: Timeouts::new(builder_header_timeout),
             user_agent,
             disable_ssz,
-            ssz_used: Arc::new(false.into()),
+            ssz_available: Arc::new(false.into()),
         })
     }
 
@@ -136,7 +136,7 @@ impl BuilderHttpClient {
 
         let Ok(Some(fork_name)) = self.fork_name_from_header(&headers) else {
             // if no fork version specified, attempt to fallback to JSON
-            self.ssz_used.store(false, Ordering::SeqCst);
+            self.ssz_available.store(false, Ordering::SeqCst);
             return serde_json::from_slice(&response_bytes).map_err(Error::InvalidJson);
         };
 
@@ -144,7 +144,7 @@ impl BuilderHttpClient {
 
         match content_type {
             ContentType::Ssz => {
-                self.ssz_used.store(true, Ordering::SeqCst);
+                self.ssz_available.store(true, Ordering::SeqCst);
                 T::from_ssz_bytes_by_fork(&response_bytes, fork_name)
                     .map(|data| ForkVersionedResponse {
                         version: Some(fork_name),
@@ -154,7 +154,7 @@ impl BuilderHttpClient {
                     .map_err(Error::InvalidSsz)
             }
             ContentType::Json => {
-                self.ssz_used.store(false, Ordering::SeqCst);
+                self.ssz_available.store(false, Ordering::SeqCst);
                 serde_json::from_slice(&response_bytes).map_err(Error::InvalidJson)
             }
         }
@@ -163,8 +163,8 @@ impl BuilderHttpClient {
     /// Return `true` if the most recently received response from the builder had SSZ Content-Type.
     /// Return `false` otherwise.
     /// Also returns `false` if we have explicitly disabled ssz.
-    pub fn is_ssz_enabled(&self) -> bool {
-        !self.disable_ssz && self.ssz_used.load(Ordering::SeqCst)
+    pub fn is_ssz_available(&self) -> bool {
+        !self.disable_ssz && self.ssz_available.load(Ordering::SeqCst)
     }
 
     async fn get_with_timeout<T: DeserializeOwned, U: IntoUrl>(
