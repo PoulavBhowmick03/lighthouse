@@ -31,6 +31,8 @@ pub const DEFAULT_USER_AGENT: &str = lighthouse_version::VERSION;
 
 /// The value we set on the `ACCEPT` http header to indicate a preference for ssz response.
 pub const PREFERENCE_ACCEPT_VALUE: &str = "application/octet-stream;q=1.0,application/json;q=0.9";
+/// Only accept json responses.
+pub const JSON_ACCEPT_VALUE: &str = "application/json";
 
 #[derive(Clone)]
 pub struct Timeouts {
@@ -225,20 +227,13 @@ impl BuilderHttpClient {
         &self,
         url: U,
         ssz_body: Vec<u8>,
-        mut headers: HeaderMap,
+        headers: HeaderMap,
         timeout: Option<Duration>,
     ) -> Result<Response, Error> {
         let mut builder = self.client.post(url);
         if let Some(timeout) = timeout {
             builder = builder.timeout(timeout);
         }
-
-        headers.insert(
-            CONTENT_TYPE_HEADER,
-            HeaderValue::from_static(SSZ_CONTENT_TYPE_HEADER),
-        );
-
-        headers.insert(ACCEPT, HeaderValue::from_static(PREFERENCE_ACCEPT_VALUE));
 
         let response = builder
             .headers(headers)
@@ -306,9 +301,21 @@ impl BuilderHttpClient {
             .push("blinded_blocks");
 
         let mut headers = HeaderMap::new();
-        if let Ok(value) = HeaderValue::from_str(&blinded_block.fork_name_unchecked().to_string()) {
-            headers.insert(CONSENSUS_VERSION_HEADER, value);
-        }
+        headers.insert(
+            CONSENSUS_VERSION_HEADER,
+            HeaderValue::from_str(&blinded_block.fork_name_unchecked().to_string())
+                .map_err(|e| Error::InvalidHeaders(format!("{}", e)))?,
+        );
+        headers.insert(
+            CONTENT_TYPE_HEADER,
+            HeaderValue::from_str(SSZ_CONTENT_TYPE_HEADER)
+                .map_err(|e| Error::InvalidHeaders(format!("{}", e)))?,
+        );
+        headers.insert(
+            ACCEPT,
+            HeaderValue::from_str(PREFERENCE_ACCEPT_VALUE)
+                .map_err(|e| Error::InvalidHeaders(format!("{}", e)))?,
+        );
 
         let result = self
             .post_ssz_with_raw_response(
@@ -340,9 +347,21 @@ impl BuilderHttpClient {
             .push("blinded_blocks");
 
         let mut headers = HeaderMap::new();
-        if let Ok(value) = HeaderValue::from_str(&blinded_block.fork_name_unchecked().to_string()) {
-            headers.insert(CONSENSUS_VERSION_HEADER, value);
-        }
+        headers.insert(
+            CONSENSUS_VERSION_HEADER,
+            HeaderValue::from_str(&blinded_block.fork_name_unchecked().to_string())
+                .map_err(|e| Error::InvalidHeaders(format!("{}", e)))?,
+        );
+        headers.insert(
+            CONTENT_TYPE_HEADER,
+            HeaderValue::from_str(JSON_CONTENT_TYPE_HEADER)
+                .map_err(|e| Error::InvalidHeaders(format!("{}", e)))?,
+        );
+        headers.insert(
+            ACCEPT,
+            HeaderValue::from_str(JSON_ACCEPT_VALUE)
+                .map_err(|e| Error::InvalidHeaders(format!("{}", e)))?,
+        );
 
         Ok(self
             .post_with_raw_response(
@@ -377,10 +396,18 @@ impl BuilderHttpClient {
 
         let mut headers = HeaderMap::new();
         if self.disable_ssz {
-            headers.insert(ACCEPT, HeaderValue::from_static(JSON_CONTENT_TYPE_HEADER));
+            headers.insert(
+                ACCEPT,
+                HeaderValue::from_str(JSON_CONTENT_TYPE_HEADER)
+                    .map_err(|e| Error::InvalidHeaders(format!("{}", e)))?,
+            );
         } else {
-            // We accept ssz responses by default so indicate that in the accept header
-            headers.insert(ACCEPT, HeaderValue::from_static(PREFERENCE_ACCEPT_VALUE));
+            // Indicate preference for ssz response in the accept header
+            headers.insert(
+                ACCEPT,
+                HeaderValue::from_str(PREFERENCE_ACCEPT_VALUE)
+                    .map_err(|e| Error::InvalidHeaders(format!("{}", e)))?,
+            );
         }
 
         let resp = self
@@ -407,5 +434,20 @@ impl BuilderHttpClient {
 
         self.get_with_timeout(path, self.timeouts.get_builder_status)
             .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_headers_no_panic() {
+        for fork in ForkName::list_all() {
+            assert!(HeaderValue::from_str(&fork.to_string()).is_ok());
+        }
+        assert!(HeaderValue::from_str(PREFERENCE_ACCEPT_VALUE).is_ok());
+        assert!(HeaderValue::from_str(JSON_ACCEPT_VALUE).is_ok());
+        assert!(HeaderValue::from_str(JSON_CONTENT_TYPE_HEADER).is_ok());
     }
 }

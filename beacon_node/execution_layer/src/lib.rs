@@ -584,6 +584,7 @@ impl<E: EthSpec> ExecutionLayer<E> {
             "Using external block builder";
             "builder_url" => ?builder_url,
             "local_user_agent" => builder_client.get_user_agent(),
+            "ssz_disabled" => disable_ssz
         );
         self.inner.builder.swap(Some(Arc::new(builder_client)));
         Ok(())
@@ -1912,6 +1913,11 @@ impl<E: EthSpec> ExecutionLayer<E> {
             let (payload_result, duration) =
                 timed_future(metrics::POST_BLINDED_PAYLOAD_BUILDER, async {
                     if builder.is_ssz_enabled() {
+                        debug!(
+                            self.log(),
+                            "Sending submit_blinded_block";
+                            "ssz" => "true"
+                        );
                         builder
                             .post_builder_blinded_blocks_ssz(block)
                             .await
