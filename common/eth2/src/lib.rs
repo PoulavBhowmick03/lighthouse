@@ -1254,24 +1254,6 @@ impl BeaconNodeHttpClient {
         Ok(Some(response.json().await?))
     }
 
-    /// `GET v1/beacon/blocks` (LEGACY)
-    ///
-    /// Returns `Ok(None)` on a 404 error.
-    pub async fn get_beacon_blocks_v1<E: EthSpec>(
-        &self,
-        block_id: BlockId,
-    ) -> Result<Option<GenericResponse<SignedBeaconBlock<E>>>, Error> {
-        let mut path = self.eth_path(V1)?;
-
-        path.path_segments_mut()
-            .map_err(|()| Error::InvalidUrl(self.server.clone()))?
-            .push("beacon")
-            .push("blocks")
-            .push(&block_id.to_string());
-
-        self.get_opt(path).await
-    }
-
     /// `GET beacon/blocks` as SSZ
     ///
     /// Returns `Ok(None)` on a 404 error.
