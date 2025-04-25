@@ -132,7 +132,7 @@ impl<E: EthSpec> ForkVersionDeserialize for BuilderBid<E> {
         fork_name: ForkName,
     ) -> Result<Self, ForkVersionDeserializeError> {
         let convert_err = |e| {
-            ForkVersionDeserializeError::SerdeValueError(serde::de::Error::custom(format!(
+            ForkVersionDeserializeError::SerdeJsonError(serde::de::Error::custom(format!(
                 "BuilderBid failed to deserialize: {:?}",
                 e
             )))

@@ -6,26 +6,15 @@ use std::sync::Arc;
 
 #[derive(Debug)]
 pub enum ForkVersionDeserializeError {
-    // TODO(fork-deserialize) we probably don't need these two similar variants
     SerdeJsonError(serde_json::Error),
-    SerdeValueError(serde::de::value::Error),
     UnsupportedForkVersion(String),
     SsePayloadDeserializationError(String),
     FullPayloadDeserializationError(String),
 }
 
-impl From<serde::de::value::Error> for ForkVersionDeserializeError {
-    fn from(err: serde::de::value::Error) -> Self {
-        ForkVersionDeserializeError::SerdeValueError(err)
-    }
-}
-
 impl std::fmt::Display for ForkVersionDeserializeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match *self {
-            ForkVersionDeserializeError::SerdeValueError(ref err) => {
-                write!(f, "Serde deserialization error: {}", err)
-            }
             ForkVersionDeserializeError::SerdeJsonError(ref err) => {
                 write!(f, "Serde deserialization error: {}", err)
             }
