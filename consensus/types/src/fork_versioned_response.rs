@@ -8,8 +8,6 @@ use std::sync::Arc;
 pub enum ForkVersionDeserializeError {
     SerdeJsonError(serde_json::Error),
     UnsupportedForkVersion(String),
-    SsePayloadDeserializationError(String),
-    FullPayloadDeserializationError(String),
 }
 
 impl std::fmt::Display for ForkVersionDeserializeError {
@@ -20,20 +18,6 @@ impl std::fmt::Display for ForkVersionDeserializeError {
             }
             ForkVersionDeserializeError::UnsupportedForkVersion(ref fork) => {
                 write!(f, "Unsupported fork: {}", fork)
-            }
-            ForkVersionDeserializeError::SsePayloadDeserializationError(ref fork) => {
-                write!(
-                    f,
-                    "SsePayloadAttributes deserialization for {} not implemented",
-                    fork
-                )
-            }
-            ForkVersionDeserializeError::FullPayloadDeserializationError(ref fork) => {
-                write!(
-                    f,
-                    "FullPayloadContents deserialization for {} not implemented",
-                    fork
-                )
             }
         }
     }
