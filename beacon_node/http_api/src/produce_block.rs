@@ -127,35 +127,6 @@ pub fn build_response_v3<T: BeaconChainTypes>(
     }
 }
 
-pub async fn produce_blinded_block_v2<T: BeaconChainTypes>(
-    accept_header: Option<api_types::Accept>,
-    chain: Arc<BeaconChain<T>>,
-    slot: Slot,
-    query: api_types::ValidatorBlocksQuery,
-) -> Result<Response<Body>, warp::Rejection> {
-    let randao_reveal = query.randao_reveal.decompress().map_err(|e| {
-        warp_utils::reject::custom_bad_request(format!(
-            "randao reveal is not a valid BLS signature: {:?}",
-            e
-        ))
-    })?;
-
-    let randao_verification = get_randao_verification(&query, randao_reveal.is_infinity())?;
-    let block_response_type = chain
-        .produce_block_with_verification(
-            randao_reveal,
-            slot,
-            query.graffiti,
-            randao_verification,
-            None,
-            BlockProductionVersion::BlindedV2,
-        )
-        .await
-        .map_err(warp_utils::reject::unhandled_error)?;
-
-    build_response_v2(chain, block_response_type, accept_header)
-}
-
 pub async fn produce_block_v2<T: BeaconChainTypes>(
     accept_header: Option<api_types::Accept>,
     chain: Arc<BeaconChain<T>>,

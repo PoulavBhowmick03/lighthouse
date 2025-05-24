@@ -33,8 +33,8 @@ mod validator_inclusion;
 mod validators;
 mod version;
 use crate::light_client::{get_light_client_bootstrap, get_light_client_updates};
-use crate::produce_block::{produce_blinded_block_v2, produce_block_v2, produce_block_v3};
-use crate::version::beacon_response;
+use crate::produce_block::{produce_block_v2, produce_block_v3};
+use crate::version::fork_versioned_response;
 use beacon_chain::{
     attestation_verification::VerifiedAttestation, observed_operations::ObservationOutcome,
     validator_monitor::timestamp_now, AttestationError as AttnError, BeaconChain, BeaconChainError,
@@ -256,8 +256,6 @@ pub fn prometheus_metrics() -> warp::filters::log::Log<impl Fn(warp::filters::lo
                 .or_else(|| starts_with("v2/validator/aggregate_attestation"))
                 .or_else(|| starts_with("v1/validator/attestation_data"))
                 .or_else(|| starts_with("v1/validator/beacon_committee_subscriptions"))
-                .or_else(|| starts_with("v1/validator/blinded_blocks"))
-                .or_else(|| starts_with("v2/validator/blinded_blocks"))
                 .or_else(|| starts_with("v1/validator/blocks"))
                 .or_else(|| starts_with("v2/validator/blocks"))
                 .or_else(|| starts_with("v3/validator/blocks"))
@@ -3430,35 +3428,6 @@ pub fn serve<T: BeaconChainTypes>(
             },
         );
 
-    // GET validator/blinded_blocks/{slot}
-    let get_validator_blinded_blocks = eth_v1
-        .and(warp::path("validator"))
-        .and(warp::path("blinded_blocks"))
-        .and(warp::path::param::<Slot>().or_else(|_| async {
-            Err(warp_utils::reject::custom_bad_request(
-                "Invalid slot".to_string(),
-            ))
-        }))
-        .and(warp::path::end())
-        .and(not_while_syncing_filter.clone())
-        .and(warp::query::<api_types::ValidatorBlocksQuery>())
-        .and(warp::header::optional::<api_types::Accept>("accept"))
-        .and(task_spawner_filter.clone())
-        .and(chain_filter.clone())
-        .then(
-            |slot: Slot,
-             not_synced_filter: Result<(), Rejection>,
-             query: api_types::ValidatorBlocksQuery,
-             accept_header: Option<api_types::Accept>,
-             task_spawner: TaskSpawner<T::EthSpec>,
-             chain: Arc<BeaconChain<T>>| {
-                task_spawner.spawn_async_with_rejection(Priority::P0, async move {
-                    not_synced_filter?;
-                    produce_blinded_block_v2(accept_header, chain, slot, query).await
-                })
-            },
-        );
-
     // GET validator/attestation_data?slot,committee_index
     let get_validator_attestation_data = eth_v1
         .and(warp::path("validator"))
@@ -4919,7 +4888,6 @@ pub fn serve<T: BeaconChainTypes>(
                 .uor(get_node_peer_count)
                 .uor(get_validator_duties_proposer)
                 .uor(get_validator_blocks)
-                .uor(get_validator_blinded_blocks)
                 .uor(get_validator_attestation_data)
                 .uor(get_validator_aggregate_attestation)
                 .uor(get_validator_sync_committee_contribution)
