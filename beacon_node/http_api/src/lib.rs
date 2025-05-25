@@ -1413,46 +1413,6 @@ pub fn serve<T: BeaconChainTypes>(
     let optional_consensus_version_header_filter =
         warp::header::optional::<ForkName>(CONSENSUS_VERSION_HEADER);
 
-    // POST beacon/blocks
-    let post_beacon_blocks = eth_v1
-        .and(warp::path("beacon"))
-        .and(warp::path("blocks"))
-        .and(warp::path::end())
-        .and(warp::body::json())
-        .and(consensus_version_header_filter)
-        .and(task_spawner_filter.clone())
-        .and(chain_filter.clone())
-        .and(network_tx_filter.clone())
-        .and(network_globals.clone())
-        .then(
-            move |value: serde_json::Value,
-                  consensus_version: ForkName,
-                  task_spawner: TaskSpawner<T::EthSpec>,
-                  chain: Arc<BeaconChain<T>>,
-                  network_tx: UnboundedSender<NetworkMessage<T::EthSpec>>,
-                  network_globals: Arc<NetworkGlobals<T::EthSpec>>| {
-                task_spawner.spawn_async_with_rejection(Priority::P0, async move {
-                    let request = PublishBlockRequest::<T::EthSpec>::context_deserialize(
-                        &value,
-                        consensus_version,
-                    )
-                    .map_err(|e| {
-                        warp_utils::reject::custom_bad_request(format!("invalid JSON: {e:?}"))
-                    })?;
-                    publish_blocks::publish_block(
-                        None,
-                        ProvenancedBlock::local_from_publish_request(request),
-                        chain,
-                        &network_tx,
-                        BroadcastValidation::default(),
-                        duplicate_block_status_code,
-                        network_globals,
-                    )
-                    .await
-                })
-            },
-        );
-
     let post_beacon_blocks_ssz = eth_v1
         .and(warp::path("beacon"))
         .and(warp::path("blocks"))
@@ -4930,7 +4890,6 @@ pub fn serve<T: BeaconChainTypes>(
                             .uor(post_beacon_blinded_blocks_ssz)
                             .uor(post_beacon_blinded_blocks_v2_ssz),
                     )
-                    .uor(post_beacon_blocks)
                     .uor(post_beacon_blinded_blocks)
                     .uor(post_beacon_blocks_v2)
                     .uor(post_beacon_blinded_blocks_v2)

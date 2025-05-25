@@ -85,7 +85,7 @@ pub async fn run_async<T: EthSpec>(
     // 2. Apply blocks to target.
     for (slot, block) in blocks.iter().rev() {
         println!("posting block at slot {slot}");
-        if let Err(e) = target.post_beacon_blocks(block).await {
+        if let Err(e) = target.post_beacon_blocks_v2(block, None).await {
             if let Error::ServerMessage(ref e) = e {
                 if e.code == 202 {
                     println!("duplicate block detected while posting block at slot {slot}");

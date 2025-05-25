@@ -1445,7 +1445,10 @@ impl ApiTester {
     pub async fn test_post_beacon_blocks_valid(mut self) -> Self {
         let next_block = self.next_block.clone();
 
-        self.client.post_beacon_blocks(&next_block).await.unwrap();
+        self.client
+            .post_beacon_blocks_v2(&next_block, None)
+            .await
+            .unwrap();
 
         assert!(
             self.network_rx.network_recv.recv().await.is_some(),
@@ -1486,7 +1489,7 @@ impl ApiTester {
 
         assert!(self
             .client
-            .post_beacon_blocks(&PublishBlockRequest::from(block))
+            .post_beacon_blocks_v2(&PublishBlockRequest::from(block), None)
             .await
             .is_err());
 
@@ -1538,7 +1541,7 @@ impl ApiTester {
 
         assert!(self
             .client
-            .post_beacon_blocks(&block_contents)
+            .post_beacon_blocks_v2(&block_contents, None)
             .await
             .is_ok());
 
@@ -1547,10 +1550,6 @@ impl ApiTester {
 
         // Test all the POST methods in sequence, they should all behave the same.
         let responses = vec![
-            self.client
-                .post_beacon_blocks(&block_contents)
-                .await
-                .unwrap_err(),
             self.client
                 .post_beacon_blocks_v2(&block_contents, None)
                 .await
@@ -3184,7 +3183,7 @@ impl ApiTester {
                 PublishBlockRequest::try_from(Arc::new(signed_block.clone())).unwrap();
 
             self.client
-                .post_beacon_blocks(&signed_block_contents)
+                .post_beacon_blocks_v2(&signed_block_contents, None)
                 .await
                 .unwrap();
 
@@ -5907,7 +5906,7 @@ impl ApiTester {
         });
 
         self.client
-            .post_beacon_blocks(&self.next_block)
+            .post_beacon_blocks_v2(&self.next_block, None)
             .await
             .unwrap();
 
@@ -5952,7 +5951,7 @@ impl ApiTester {
         self.harness.advance_slot();
 
         self.client
-            .post_beacon_blocks(&self.reorg_block)
+            .post_beacon_blocks_v2(&self.reorg_block, None)
             .await
             .unwrap();
 
@@ -6174,7 +6173,7 @@ impl ApiTester {
         });
 
         self.client
-            .post_beacon_blocks(&self.next_block)
+            .post_beacon_blocks_v2(&self.next_block, None)
             .await
             .unwrap();
 

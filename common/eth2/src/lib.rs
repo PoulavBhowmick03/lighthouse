@@ -1031,32 +1031,6 @@ impl BeaconNodeHttpClient {
     /// `POST beacon/blocks`
     ///
     /// Returns `Ok(None)` on a 404 error.
-    pub async fn post_beacon_blocks<E: EthSpec>(
-        &self,
-        block_contents: &PublishBlockRequest<E>,
-    ) -> Result<(), Error> {
-        let mut path = self.eth_path(V1)?;
-
-        path.path_segments_mut()
-            .map_err(|()| Error::InvalidUrl(self.server.clone()))?
-            .push("beacon")
-            .push("blocks");
-
-        let fork_name = block_contents.signed_block().fork_name_unchecked();
-        self.post_generic_with_consensus_version(
-            path,
-            block_contents,
-            Some(self.timeouts.proposal),
-            fork_name,
-        )
-        .await?;
-
-        Ok(())
-    }
-
-    /// `POST beacon/blocks`
-    ///
-    /// Returns `Ok(None)` on a 404 error.
     pub async fn post_beacon_blocks_ssz<E: EthSpec>(
         &self,
         block_contents: &PublishBlockRequest<E>,
