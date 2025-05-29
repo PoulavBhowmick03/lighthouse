@@ -3758,6 +3758,266 @@ impl ApiTester {
         self
     }
 
+    pub async fn test_blinded_block_production(&self) {
+        let fork = self.chain.canonical_head.cached_head().head_fork();
+        let genesis_validators_root = self.chain.genesis_validators_root;
+
+        for _ in 0..E::slots_per_epoch() * 3 {
+            let slot = self.chain.slot().unwrap();
+            let epoch = self.chain.epoch().unwrap();
+
+            let proposer_pubkey_bytes = self
+                .client
+                .get_validator_duties_proposer(epoch)
+                .await
+                .unwrap()
+                .data
+                .into_iter()
+                .find(|duty| duty.slot == slot)
+                .map(|duty| duty.pubkey)
+                .unwrap();
+            let proposer_pubkey = (&proposer_pubkey_bytes).try_into().unwrap();
+
+            let sk = self
+                .validator_keypairs()
+                .iter()
+                .find(|kp| kp.pk == proposer_pubkey)
+                .map(|kp| kp.sk.clone())
+                .unwrap();
+
+            let randao_reveal = {
+                let domain = self.chain.spec.get_domain(
+                    epoch,
+                    Domain::Randao,
+                    &fork,
+                    genesis_validators_root,
+                );
+                let message = epoch.signing_root(domain);
+                sk.sign(message).into()
+            };
+
+            let (response, metadata) = self
+                .client
+                .get_validator_blocks_v3::<E>(slot, &randao_reveal, None, None)
+                .await
+                .unwrap();
+
+            match response.data {
+                ProduceBlockV3Response::Blinded(blinded_block) => {
+                    assert!(metadata.execution_payload_blinded);
+                    assert_eq!(
+                        metadata.consensus_version,
+                        blinded_block.to_ref().fork_name(&self.chain.spec).unwrap()
+                    );
+                    let signed_blinded_block =
+                        blinded_block.sign(&sk, &fork, genesis_validators_root, &self.chain.spec);
+
+                    self.client
+                        .post_beacon_blinded_blocks(&signed_blinded_block)
+                        .await
+                        .unwrap();
+
+                    let head_block = self.chain.head_beacon_block().clone_as_blinded();
+                    assert_eq!(head_block, signed_blinded_block);
+
+                    self.chain.slot_clock.set_slot(slot.as_u64() + 1);
+                }
+                ProduceBlockV3Response::Full(block_contents) => {
+                    assert!(!metadata.execution_payload_blinded);
+                    assert_eq!(
+                        metadata.consensus_version,
+                        block_contents
+                            .block()
+                            .to_ref()
+                            .fork_name(&self.chain.spec)
+                            .unwrap()
+                    );
+                    let signed_block_contents =
+                        block_contents.sign(&sk, &fork, genesis_validators_root, &self.chain.spec);
+
+                    self.client
+                        .post_beacon_blocks(&signed_block_contents)
+                        .await
+                        .unwrap();
+
+                    assert_eq!(
+                        self.chain.head_beacon_block(),
+                        *signed_block_contents.signed_block()
+                    );
+
+                    self.chain.slot_clock.set_slot(slot.as_u64() + 1);
+                }
+            }
+        }
+    }
+
+    pub async fn test_blinded_block_production_ssz(&self) {
+        let fork = self.chain.canonical_head.cached_head().head_fork();
+        let genesis_validators_root = self.chain.genesis_validators_root;
+
+        for _ in 0..E::slots_per_epoch() * 3 {
+            let slot = self.chain.slot().unwrap();
+            let epoch = self.chain.epoch().unwrap();
+
+            let proposer_pubkey_bytes = self
+                .client
+                .get_validator_duties_proposer(epoch)
+                .await
+                .unwrap()
+                .data
+                .into_iter()
+                .find(|duty| duty.slot == slot)
+                .map(|duty| duty.pubkey)
+                .unwrap();
+            let proposer_pubkey = (&proposer_pubkey_bytes).try_into().unwrap();
+
+            let sk = self
+                .validator_keypairs()
+                .iter()
+                .find(|kp| kp.pk == proposer_pubkey)
+                .map(|kp| kp.sk.clone())
+                .unwrap();
+
+            let randao_reveal = {
+                let domain = self.chain.spec.get_domain(
+                    epoch,
+                    Domain::Randao,
+                    &fork,
+                    genesis_validators_root,
+                );
+                let message = epoch.signing_root(domain);
+                sk.sign(message).into()
+            };
+
+            let block_contents_bytes = self
+                .client
+                .get_validator_blocks_ssz::<E>(slot, &randao_reveal, None)
+                .await
+                .unwrap()
+                .expect("block bytes");
+
+            let block_contents =
+                FullBlockContents::<E>::from_ssz_bytes(&block_contents_bytes, &self.chain.spec)
+                    .expect("block contents bytes can be decoded");
+
+            let signed_block_contents =
+                block_contents.sign(&sk, &fork, genesis_validators_root, &self.chain.spec);
+
+            self.client
+                .post_beacon_blinded_blocks_ssz(
+                    &signed_block_contents.signed_block().clone_as_blinded(),
+                )
+                .await
+                .unwrap();
+
+            let head_block = self
+                .client
+                .get_beacon_blocks(CoreBlockId::Head)
+                .await
+                .unwrap()
+                .unwrap()
+                .into_data();
+
+            let signed_block = signed_block_contents.signed_block();
+            assert_eq!(head_block, **signed_block);
+
+            self.chain.slot_clock.set_slot(slot.as_u64() + 1);
+        }
+    }
+
+    pub async fn test_blinded_block_production_no_verify_randao(self) -> Self {
+        for _ in 0..E::slots_per_epoch() {
+            let slot = self.chain.slot().unwrap();
+
+            let (response, _metadata) = self
+                .client
+                .get_validator_blocks_v3_modular::<E>(
+                    slot,
+                    &Signature::infinity().unwrap().into(),
+                    None,
+                    SkipRandaoVerification::Yes,
+                    None,
+                )
+                .await
+                .unwrap();
+
+            match response.data {
+                ProduceBlockV3Response::Blinded(blinded_block) => {
+                    assert_eq!(blinded_block.slot(), slot);
+                }
+                ProduceBlockV3Response::Full(full_block) => {
+                    assert_eq!(full_block.block().slot(), slot);
+                }
+            }
+
+            self.chain.slot_clock.set_slot(slot.as_u64() + 1);
+        }
+
+        self
+    }
+
+    pub async fn test_blinded_block_production_verify_randao_invalid(self) -> Self {
+        let fork = self.chain.canonical_head.cached_head().head_fork();
+        let genesis_validators_root = self.chain.genesis_validators_root;
+
+        for _ in 0..E::slots_per_epoch() {
+            let slot = self.chain.slot().unwrap();
+            let epoch = self.chain.epoch().unwrap();
+
+            let proposer_pubkey_bytes = self
+                .client
+                .get_validator_duties_proposer(epoch)
+                .await
+                .unwrap()
+                .data
+                .into_iter()
+                .find(|duty| duty.slot == slot)
+                .map(|duty| duty.pubkey)
+                .unwrap();
+            let proposer_pubkey = (&proposer_pubkey_bytes).try_into().unwrap();
+
+            let sk = self
+                .validator_keypairs()
+                .iter()
+                .find(|kp| kp.pk == proposer_pubkey)
+                .map(|kp| kp.sk.clone())
+                .unwrap();
+
+            let bad_randao_reveal = {
+                let domain = self.chain.spec.get_domain(
+                    epoch,
+                    Domain::Randao,
+                    &fork,
+                    genesis_validators_root,
+                );
+                let message = (epoch + 1).signing_root(domain);
+                sk.sign(message).into()
+            };
+
+            // Check failure with full randao verification enabled.
+            self.client
+                .get_validator_blocks_v3::<E>(slot, &bad_randao_reveal, None, None)
+                .await
+                .unwrap_err();
+
+            // Check failure with `skip_randao_verification` (requires infinity sig).
+            self.client
+                .get_validator_blocks_v3_modular::<E>(
+                    slot,
+                    &bad_randao_reveal,
+                    None,
+                    SkipRandaoVerification::Yes,
+                    None,
+                )
+                .await
+                .unwrap_err();
+
+            self.chain.slot_clock.set_slot(slot.as_u64() + 1);
+        }
+
+        self
+    }
+
     pub async fn test_get_validator_attestation_data(self) -> Self {
         let mut state = self.chain.head_beacon_state_cloned();
         let slot = state.slot();
@@ -4451,7 +4711,7 @@ impl ApiTester {
             ProduceBlockV3Response::Blinded(payload) => {
                 payload.body().execution_payload().unwrap().into()
             }
-            ProduceBlockV3Response::Full(_) => panic!("Expecting a full payload"),
+            ProduceBlockV3Response::Full(_) => panic!("Expecting a blinded payload"),
         };
 
         let expected_fee_recipient = Address::from_low_u64_be(proposer_index);
@@ -4627,7 +4887,7 @@ impl ApiTester {
             ProduceBlockV3Response::Blinded(payload) => {
                 payload.body().execution_payload().unwrap().into()
             }
-            ProduceBlockV3Response::Full(_) => panic!("Expecting a full payload"),
+            ProduceBlockV3Response::Full(_) => panic!("Expecting a blinded payload"),
         };
 
         assert_eq!(payload.fee_recipient(), test_fee_recipient);
@@ -5226,7 +5486,7 @@ impl ApiTester {
             ProduceBlockV3Response::Blinded(payload) => {
                 payload.body().execution_payload().unwrap().into()
             }
-            ProduceBlockV3Response::Full(_) => panic!("Expecting a full payload"),
+            ProduceBlockV3Response::Full(_) => panic!("Expecting a blinded payload"),
         };
 
         // This cache should not be populated because fallback should not have been used.
@@ -5418,7 +5678,7 @@ impl ApiTester {
             ProduceBlockV3Response::Blinded(payload) => {
                 payload.body().execution_payload().unwrap().into()
             }
-            ProduceBlockV3Response::Full(_) => panic!("Expecting a full payload"),
+            ProduceBlockV3Response::Full(_) => panic!("Expecting a blinded payload"),
         };
 
         // This cache should not be populated because fallback should not have been used.
@@ -5838,7 +6098,7 @@ impl ApiTester {
             ProduceBlockV3Response::Blinded(payload) => {
                 payload.body().execution_payload().unwrap().into()
             }
-            ProduceBlockV3Response::Full(_) => panic!("Expecting a full payload"),
+            ProduceBlockV3Response::Full(_) => panic!("Expecting a blinded payload"),
         };
 
         // The builder's payload should've been chosen, so this cache should not be populated
@@ -7153,6 +7413,83 @@ async fn block_production_v3_ssz_with_skip_slots() {
         .await
         .skip_slots(E::slots_per_epoch() * 2)
         .test_block_production_v3_ssz()
+        .await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn blinded_block_production_full_payload_premerge() {
+    ApiTester::new().await.test_blinded_block_production().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn blinded_block_production_ssz_full_payload_premerge() {
+    ApiTester::new()
+        .await
+        .test_blinded_block_production_ssz()
+        .await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn blinded_block_production_with_skip_slots_full_payload_premerge() {
+    ApiTester::new()
+        .await
+        .skip_slots(E::slots_per_epoch() * 2)
+        .test_blinded_block_production()
+        .await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn blinded_block_production_ssz_with_skip_slots_full_payload_premerge() {
+    ApiTester::new()
+        .await
+        .skip_slots(E::slots_per_epoch() * 2)
+        .test_blinded_block_production_ssz()
+        .await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn blinded_block_production_no_verify_randao_full_payload_premerge() {
+    ApiTester::new()
+        .await
+        .test_blinded_block_production_no_verify_randao()
+        .await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn blinded_block_production_verify_randao_invalid_full_payload_premerge() {
+    ApiTester::new()
+        .await
+        .test_blinded_block_production_verify_randao_invalid()
+        .await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn blinded_block_production_blinded_payload_premerge() {
+    ApiTester::new().await.test_blinded_block_production().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn blinded_block_production_with_skip_slots_blinded_payload_premerge() {
+    ApiTester::new()
+        .await
+        .skip_slots(E::slots_per_epoch() * 2)
+        .test_blinded_block_production()
+        .await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn blinded_block_production_no_verify_randao_blinded_payload_premerge() {
+    ApiTester::new()
+        .await
+        .test_blinded_block_production_no_verify_randao()
+        .await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn blinded_block_production_verify_randao_invalid_blinded_payload_premerge() {
+    ApiTester::new()
+        .await
+        .test_blinded_block_production_verify_randao_invalid()
         .await;
 }
 
