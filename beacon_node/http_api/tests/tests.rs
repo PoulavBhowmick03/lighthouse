@@ -3822,30 +3822,8 @@ impl ApiTester {
 
                     self.chain.slot_clock.set_slot(slot.as_u64() + 1);
                 }
-                ProduceBlockV3Response::Full(block_contents) => {
-                    assert!(!metadata.execution_payload_blinded);
-                    assert_eq!(
-                        metadata.consensus_version,
-                        block_contents
-                            .block()
-                            .to_ref()
-                            .fork_name(&self.chain.spec)
-                            .unwrap()
-                    );
-                    let signed_block_contents =
-                        block_contents.sign(&sk, &fork, genesis_validators_root, &self.chain.spec);
-
-                    self.client
-                        .post_beacon_blocks(&signed_block_contents)
-                        .await
-                        .unwrap();
-
-                    assert_eq!(
-                        self.chain.head_beacon_block(),
-                        *signed_block_contents.signed_block()
-                    );
-
-                    self.chain.slot_clock.set_slot(slot.as_u64() + 1);
+                ProduceBlockV3Response::Full(_) => {
+                    panic!("Expecting a blinded block");
                 }
             }
         }
@@ -3945,8 +3923,8 @@ impl ApiTester {
                 ProduceBlockV3Response::Blinded(blinded_block) => {
                     assert_eq!(blinded_block.slot(), slot);
                 }
-                ProduceBlockV3Response::Full(full_block) => {
-                    assert_eq!(full_block.block().slot(), slot);
+                ProduceBlockV3Response::Full(_) => {
+                    panic!("Expecting a blinded block");
                 }
             }
 
