@@ -1022,12 +1022,7 @@ impl<T: BeaconChainTypes> NetworkBeaconProcessor<T> {
             }
         };
 
-        let oldest_data_column_slot = self
-            .chain
-            .store
-            .get_data_column_info()
-            .oldest_data_column_slot
-            .unwrap_or(data_availability_boundary_slot);
+        let oldest_data_column_slot = data_availability_boundary_slot;
 
         if request_start_slot < oldest_data_column_slot {
             debug!(
