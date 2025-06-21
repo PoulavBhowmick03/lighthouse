@@ -334,7 +334,7 @@ impl<T: BeaconChainTypes> CanonicalHead<T> {
         let head_block_root = self.cached_head().head_block_root();
         self.fork_choice_read_lock()
             .get_block_execution_status(&head_block_root)
-            .ok_or(Error::HeadMissingFromForkChoice(head_block_root))
+            .ok_or(Error::HeadMissingFromForkChoice(Box::new(head_block_root)))
     }
 
     /// Returns a clone of the `CachedHead` and the execution status of the contained head block.
@@ -350,7 +350,7 @@ impl<T: BeaconChainTypes> CanonicalHead<T> {
         let execution_status = self
             .fork_choice_read_lock()
             .get_block_execution_status(&head_block_root)
-            .ok_or(Error::HeadMissingFromForkChoice(head_block_root))?;
+            .ok_or(Error::HeadMissingFromForkChoice(Box::new(head_block_root)))?;
         Ok((head, execution_status))
     }
 
@@ -592,9 +592,9 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
 
         let new_head_proto_block = fork_choice_read_lock
             .get_block(&new_view.head_block_root)
-            .ok_or(Error::HeadBlockMissingFromForkChoice(
+            .ok_or(Error::HeadBlockMissingFromForkChoice(Box::new(
                 new_view.head_block_root,
-            ))?;
+            )))?;
 
         // Do not allow an invalid block to become the head.
         //
@@ -610,7 +610,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         // However, this check is cheap.
         if new_head_proto_block.execution_status.is_invalid() {
             return Err(Error::HeadHasInvalidPayload {
-                block_root: new_head_proto_block.root,
+                block_root: Box::new(new_head_proto_block.root),
                 execution_status: new_head_proto_block.execution_status,
             });
         }
@@ -1049,7 +1049,7 @@ fn check_finalized_payload_validity<T: BeaconChainTypes>(
 
         // Exit now, the node is in an invalid state.
         return Err(Error::InvalidFinalizedPayload {
-            finalized_root: finalized_proto_block.root,
+            finalized_root: Box::new(finalized_proto_block.root),
             execution_block_hash: block_hash,
         });
     }
@@ -1070,8 +1070,8 @@ fn check_against_finality_reversion(
         Ok(())
     } else {
         Err(Error::RevertedFinalizedEpoch {
-            old: old_view.finalized_checkpoint,
-            new: new_view.finalized_checkpoint,
+            old: Box::new(old_view.finalized_checkpoint),
+            new: Box::new(new_view.finalized_checkpoint),
         })
     }
 }

@@ -175,7 +175,9 @@ pub fn compute_proposer_duties_from_head<T: BeaconChainTypes>(
         .canonical_head
         .fork_choice_read_lock()
         .get_block_execution_status(&head_block_root)
-        .ok_or(BeaconChainError::HeadMissingFromForkChoice(head_block_root))?;
+        .ok_or(BeaconChainError::HeadMissingFromForkChoice(Box::new(
+            head_block_root,
+        )))?;
 
     // Advance the state into the requested epoch.
     ensure_state_is_in_epoch(&mut state, head_state_root, request_epoch, &chain.spec)?;

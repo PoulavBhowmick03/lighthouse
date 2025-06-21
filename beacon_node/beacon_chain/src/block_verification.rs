@@ -1432,9 +1432,9 @@ impl<T: BeaconChainTypes> ExecutionPendingBlock<T> {
         let parent_slot = parent.beacon_block.slot();
         if state.slot() < parent_slot || state.slot() > block.slot() {
             return Err(BeaconChainError::BadPreState {
-                parent_root: parent.beacon_block_root,
+                parent_root: Box::new(parent.beacon_block_root),
                 parent_slot,
-                block_root,
+                block_root: Box::new(block_root),
                 block_slot: block.slot(),
                 state_slot: state.slot(),
             }
