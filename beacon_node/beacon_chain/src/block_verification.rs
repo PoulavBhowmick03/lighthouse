@@ -251,7 +251,7 @@ pub enum BlockError {
     ///
     /// We were unable to process this block due to an internal error. It's unclear if the block is
     /// valid.
-    BeaconChainError(Box<BeaconChainError>),
+    BeaconChainError(BeaconChainError),
     /// There was an error whilst verifying weak subjectivity. This block conflicts with the
     /// configured weak subjectivity checkpoint and was not imported.
     ///
@@ -994,7 +994,7 @@ impl<T: BeaconChainTypes> GossipVerifiedBlock<T> {
             .observed_slashable
             .write()
             .observe_slashable(block.slot(), block.message().proposer_index(), block_root)
-            .map_err(|e| BlockError::BeaconChainError(Box::new(e.into())))?;
+            .map_err(|e| BlockError::BeaconChainError(e.into()))?;
         // Now the signature is valid, store the proposal so we don't accept another from this
         // validator and slot.
         //
@@ -1004,7 +1004,7 @@ impl<T: BeaconChainTypes> GossipVerifiedBlock<T> {
             .observed_block_producers
             .write()
             .observe_proposal(block_root, block.message())
-            .map_err(|e| BlockError::BeaconChainError(Box::new(e.into())))?
+            .map_err(|e| BlockError::BeaconChainError(e.into()))?
         {
             SeenBlock::Slashable => {
                 return Err(BlockError::Slashable);
@@ -1313,13 +1313,13 @@ impl<T: BeaconChainTypes> ExecutionPendingBlock<T> {
             .observed_slashable
             .write()
             .observe_slashable(block.slot(), block.message().proposer_index(), block_root)
-            .map_err(|e| BlockError::BeaconChainError(Box::new(e.into())))?;
+            .map_err(|e| BlockError::BeaconChainError(e.into()))?;
 
         chain
             .observed_block_producers
             .write()
             .observe_proposal(block_root, block.message())
-            .map_err(|e| BlockError::BeaconChainError(Box::new(e.into())))?;
+            .map_err(|e| BlockError::BeaconChainError(e.into()))?;
 
         if let Some(parent) = chain
             .canonical_head
@@ -1629,7 +1629,7 @@ impl<T: BeaconChainTypes> ExecutionPendingBlock<T> {
                 // Ignore invalid attestations whilst importing attestations from a block. The
                 // block might be very old and therefore the attestations useless to fork choice.
                 Err(ForkChoiceError::InvalidAttestation(_)) => Ok(()),
-                Err(e) => Err(BlockError::BeaconChainError(Box::new(e.into()))),
+                Err(e) => Err(BlockError::BeaconChainError(e.into())),
             }?;
         }
         drop(fork_choice);
@@ -1720,7 +1720,7 @@ pub fn check_block_is_finalized_checkpoint_or_descendant<
         if chain
             .store
             .block_exists(&block.parent_root())
-            .map_err(|e| BlockError::BeaconChainError(Box::new(e.into())))?
+            .map_err(|e| BlockError::BeaconChainError(e.into()))?
         {
             Err(BlockError::NotFinalizedDescendant {
                 block_parent_root: block.parent_root(),
@@ -1865,7 +1865,7 @@ fn load_parent<T: BeaconChainTypes, B: AsBlock<T::EthSpec>>(
         let root = block.parent_root();
         let parent_block = chain
             .get_blinded_block(&block.parent_root())
-            .map_err(|e| BlockError::BeaconChainError(Box::new(e)))?
+            .map_err(|e| BlockError::BeaconChainError(e))?
             .ok_or_else(|| {
                 // Return a `MissingBeaconBlock` error instead of a `ParentUnknown` error since
                 // we've already checked fork choice for this block.

@@ -3477,8 +3477,8 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
                 Ok(status)
             }
             Err(BlockError::BeaconChainError(e)) => {
-                match e.as_ref() {
-                    BeaconChainError::TokioJoin(e) => {
+                match e {
+                    BeaconChainError::TokioJoin(ref e) => {
                         debug!(
                             error = ?e,
                             "Beacon block processing cancelled"
@@ -3626,7 +3626,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
                         header.message.proposer_index,
                         block_root,
                     )
-                    .map_err(|e| BlockError::BeaconChainError(Box::new(e.into())))?;
+                    .map_err(|e| BlockError::BeaconChainError(e.into()))?;
                 if let Some(slasher) = self.slasher.as_ref() {
                     slasher.accept_block_header(header);
                 }
@@ -3722,7 +3722,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
                         header.message.proposer_index,
                         block_root,
                     )
-                    .map_err(|e| BlockError::BeaconChainError(Box::new(e.into())))?;
+                    .map_err(|e| BlockError::BeaconChainError(e.into()))?;
                 if let Some(slasher) = self.slasher.as_ref() {
                     slasher.accept_block_header(header);
                 }
@@ -3902,7 +3902,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
                     payload_verification_status,
                     &self.spec,
                 )
-                .map_err(|e| BlockError::BeaconChainError(Box::new(e.into())))?;
+                .map_err(|e| BlockError::BeaconChainError(e.into()))?;
         }
 
         // If the block is recent enough and it was not optimistically imported, check to see if it
@@ -4095,7 +4095,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
                 warning = "The database is likely corrupt now, consider --purge-db",
                 "No stored fork choice found to restore from"
             );
-            Err(BlockError::BeaconChainError(Box::new(e)))
+            Err(BlockError::BeaconChainError(e))
         } else {
             Ok(())
         }
@@ -4150,9 +4150,9 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
                              Provided block root is not a checkpoint.",
                     ))
                     .map_err(|err| {
-                        BlockError::BeaconChainError(Box::new(
+                        BlockError::BeaconChainError(
                             BeaconChainError::WeakSubjectivtyShutdownError(err),
-                        ))
+                        )
                     })?;
                 return Err(BlockError::WeakSubjectivityConflict);
             }
@@ -5218,16 +5218,16 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
             .validators()
             .get(proposer_index as usize)
             .map(|v| v.pubkey)
-            .ok_or(BlockProductionError::BeaconChain(Box::new(
+            .ok_or(BlockProductionError::BeaconChain(
                 BeaconChainError::ValidatorIndexUnknown(proposer_index as usize),
-            )))?;
+            ))?;
 
         let builder_params = BuilderParams {
             pubkey,
             slot: state.slot(),
             chain_health: self
                 .is_healthy(&parent_root)
-                .map_err(|e| BlockProductionError::BeaconChain(Box::new(e)))?,
+                .map_err(|e| BlockProductionError::BeaconChain(e))?,
         };
 
         // If required, start the process of loading an execution payload from the EL early. This

@@ -2628,7 +2628,7 @@ impl<T: BeaconChainTypes> NetworkBeaconProcessor<T> {
                 );
             }
             AttnError::BeaconChainError(e) => {
-                match e.as_ref() {
+                match e {
                     BeaconChainError::DBError(Error::HotColdDBError(
                         HotColdDBError::FinalizedStateNotInHotDatabase { .. },
                     )) => {

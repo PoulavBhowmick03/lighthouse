@@ -123,9 +123,8 @@ pub async fn publish_block<T: BeaconChainTypes, B: IntoGossipVerifiedBlock<T>>(
             "Signed block published to network via HTTP API"
         );
 
-        crate::publish_pubsub_message(&sender, PubsubMessage::BeaconBlock(block.clone())).map_err(
-            |_| BlockError::BeaconChainError(Box::new(BeaconChainError::UnableToPublish)),
-        )?;
+        crate::publish_pubsub_message(&sender, PubsubMessage::BeaconBlock(block.clone()))
+            .map_err(|_| BlockError::BeaconChainError(BeaconChainError::UnableToPublish))?;
 
         Ok(())
     };
@@ -510,7 +509,7 @@ fn publish_blob_sidecars<T: BeaconChainTypes>(
 ) -> Result<(), BlockError> {
     let pubsub_message = PubsubMessage::BlobSidecar(Box::new((blob.index(), blob.clone_blob())));
     crate::publish_pubsub_message(sender_clone, pubsub_message)
-        .map_err(|_| BlockError::BeaconChainError(Box::new(BeaconChainError::UnableToPublish)))
+        .map_err(|_| BlockError::BeaconChainError(BeaconChainError::UnableToPublish))
 }
 
 fn publish_column_sidecars<T: BeaconChainTypes>(
@@ -540,7 +539,7 @@ fn publish_column_sidecars<T: BeaconChainTypes>(
         })
         .collect::<Vec<_>>();
     crate::publish_pubsub_messages(sender_clone, pubsub_messages)
-        .map_err(|_| BlockError::BeaconChainError(Box::new(BeaconChainError::UnableToPublish)))
+        .map_err(|_| BlockError::BeaconChainError(BeaconChainError::UnableToPublish))
 }
 
 async fn post_block_import_logging_and_response<T: BeaconChainTypes>(
@@ -597,9 +596,7 @@ async fn post_block_import_logging_and_response<T: BeaconChainTypes>(
                 Err(warp_utils::reject::custom_bad_request(msg))
             }
         }
-        Err(BlockError::BeaconChainError(e))
-            if matches!(e.as_ref(), BeaconChainError::UnableToPublish) =>
-        {
+        Err(BlockError::BeaconChainError(e)) if matches!(e, BeaconChainError::UnableToPublish) => {
             Err(warp_utils::reject::custom_server_error(
                 "unable to publish to network channel".to_string(),
             ))
@@ -795,7 +792,7 @@ fn check_slashable<T: BeaconChainTypes>(
             block_clone.message().proposer_index(),
             block_root,
         )
-        .map_err(|e| BlockError::BeaconChainError(Box::new(e.into())))?
+        .map_err(|e| BlockError::BeaconChainError(e.into()))?
     {
         warn!(
             slot = %block_clone.slot(),

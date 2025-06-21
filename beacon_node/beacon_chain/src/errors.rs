@@ -294,7 +294,7 @@ pub enum BlockProductionError {
     MissingExecutionPayload,
     MissingKzgCommitment(String),
     TokioJoin(JoinError),
-    BeaconChain(Box<BeaconChainError>),
+    BeaconChain(BeaconChainError),
     InvalidPayloadFork,
     InvalidBlockVariant(String),
     KzgError(kzg::Error),

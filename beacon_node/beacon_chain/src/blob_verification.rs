@@ -42,7 +42,7 @@ pub enum GossipBlobError {
     ///
     /// We were unable to process this blob due to an internal error. It's
     /// unclear if the blob is valid.
-    BeaconChainError(Box<BeaconChainError>),
+    BeaconChainError(BeaconChainError),
 
     /// The `BlobSidecar` was gossiped over an incorrect subnet.
     ///
@@ -444,7 +444,7 @@ pub fn validate_blob_sidecar_for_gossip<T: BeaconChainTypes, O: ObservationStrat
         .observed_blob_sidecars
         .read()
         .proposer_is_known(&blob_sidecar)
-        .map_err(|e| GossipBlobError::BeaconChainError(Box::new(e.into())))?
+        .map_err(|e| GossipBlobError::BeaconChainError(e.into()))?
     {
         return Err(GossipBlobError::RepeatBlob {
             proposer: blob_proposer_index,
@@ -509,7 +509,7 @@ pub fn validate_blob_sidecar_for_gossip<T: BeaconChainTypes, O: ObservationStrat
         let (parent_state_root, mut parent_state) = chain
             .store
             .get_advanced_hot_state(block_parent_root, blob_slot, parent_block.state_root)
-            .map_err(|e| GossipBlobError::BeaconChainError(Box::new(e.into())))?
+            .map_err(|e| GossipBlobError::BeaconChainError(e.into()))?
             .ok_or_else(|| {
                 BeaconChainError::DBInconsistent(format!(
                     "Missing state for parent block {block_parent_root:?}",
@@ -581,7 +581,7 @@ pub fn validate_blob_sidecar_for_gossip<T: BeaconChainTypes, O: ObservationStrat
             blob_sidecar.block_proposer_index(),
             block_root,
         )
-        .map_err(|e| GossipBlobError::BeaconChainError(Box::new(e.into())))?;
+        .map_err(|e| GossipBlobError::BeaconChainError(e.into()))?;
 
     if O::observe() {
         observe_gossip_blob(&kzg_verified_blob.blob, chain)?;
@@ -627,7 +627,7 @@ fn observe_gossip_blob<T: BeaconChainTypes>(
         .observed_blob_sidecars
         .write()
         .observe_sidecar(blob_sidecar)
-        .map_err(|e| GossipBlobError::BeaconChainError(Box::new(e.into())))?
+        .map_err(|e| GossipBlobError::BeaconChainError(e.into()))?
     {
         return Err(GossipBlobError::RepeatBlob {
             proposer: blob_sidecar.block_proposer_index(),

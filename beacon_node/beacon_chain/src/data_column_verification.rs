@@ -32,7 +32,7 @@ pub enum GossipDataColumnError {
     ///
     /// We were unable to process this data column due to an internal error. It's
     /// unclear if the data column is valid.
-    BeaconChainError(Box<BeaconChainError>),
+    BeaconChainError(BeaconChainError),
     /// The proposal signature in invalid.
     ///
     /// ## Peer scoring
@@ -508,7 +508,7 @@ pub fn validate_data_column_sidecar_for_gossip<T: BeaconChainTypes, O: Observati
             data_column.block_proposer_index(),
             data_column.block_root(),
         )
-        .map_err(|e| GossipDataColumnError::BeaconChainError(Box::new(e.into())))?;
+        .map_err(|e| GossipDataColumnError::BeaconChainError(e.into()))?;
 
     if O::observe() {
         observe_gossip_data_column(&data_column, chain)?;
@@ -564,7 +564,7 @@ fn verify_is_first_sidecar<T: BeaconChainTypes>(
         .observed_column_sidecars
         .read()
         .proposer_is_known(data_column)
-        .map_err(|e| GossipDataColumnError::BeaconChainError(Box::new(e.into())))?
+        .map_err(|e| GossipDataColumnError::BeaconChainError(e.into()))?
     {
         return Err(GossipDataColumnError::PriorKnown {
             proposer: data_column.block_proposer_index(),
@@ -664,7 +664,7 @@ fn verify_proposer_and_signature<T: BeaconChainTypes>(
         let (parent_state_root, mut parent_state) = chain
             .store
             .get_advanced_hot_state(block_parent_root, column_slot, parent_block.state_root)
-            .map_err(|e| GossipDataColumnError::BeaconChainError(Box::new(e.into())))?
+            .map_err(|e| GossipDataColumnError::BeaconChainError(e.into()))?
             .ok_or_else(|| {
                 BeaconChainError::DBInconsistent(format!(
                     "Missing state for parent block {block_parent_root:?}",
@@ -797,7 +797,7 @@ pub fn observe_gossip_data_column<T: BeaconChainTypes>(
         .observed_column_sidecars
         .write()
         .observe_sidecar(data_column_sidecar)
-        .map_err(|e| GossipDataColumnError::BeaconChainError(Box::new(e.into())))?
+        .map_err(|e| GossipDataColumnError::BeaconChainError(e.into()))?
     {
         return Err(GossipDataColumnError::PriorKnown {
             proposer: data_column_sidecar.block_proposer_index(),
