@@ -232,7 +232,7 @@ pub enum Error {
 
 impl From<BeaconChainError> for Error {
     fn from(e: BeaconChainError) -> Self {
-        Error::BeaconChainError(e.into())
+        Error::BeaconChainError(e)
     }
 }
 

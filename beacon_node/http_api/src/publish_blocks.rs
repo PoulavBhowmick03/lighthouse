@@ -170,7 +170,7 @@ pub async fn publish_block<T: BeaconChainTypes, B: IntoGossipVerifiedBlock<T>>(
                     seen_timestamp,
                 )?,
                 BroadcastValidation::ConsensusAndEquivocation => {
-                    check_slashable(&chain, block_root, &block_to_publish)?;
+                    check_slashable(&chain, block_root, &block_to_publish).map_err(|e| *e)?;
                     publish_block_p2p(
                         block_to_publish.clone(),
                         sender_clone.clone(),
@@ -506,17 +506,20 @@ fn build_gossip_verified_blobs<T: BeaconChainTypes>(
 fn publish_blob_sidecars<T: BeaconChainTypes>(
     sender_clone: &UnboundedSender<NetworkMessage<T::EthSpec>>,
     blob: &GossipVerifiedBlob<T>,
-) -> Result<(), BlockError> {
+) -> Result<(), Box<BlockError>> {
     let pubsub_message = PubsubMessage::BlobSidecar(Box::new((blob.index(), blob.clone_blob())));
-    crate::publish_pubsub_message(sender_clone, pubsub_message)
-        .map_err(|_| BlockError::BeaconChainError(BeaconChainError::UnableToPublish))
+    crate::publish_pubsub_message(sender_clone, pubsub_message).map_err(|_| {
+        Box::new(BlockError::BeaconChainError(
+            BeaconChainError::UnableToPublish,
+        ))
+    })
 }
 
 fn publish_column_sidecars<T: BeaconChainTypes>(
     sender_clone: &UnboundedSender<NetworkMessage<T::EthSpec>>,
     data_column_sidecars: &[Option<GossipVerifiedDataColumn<T>>],
     chain: &BeaconChain<T>,
-) -> Result<(), BlockError> {
+) -> Result<(), Box<BlockError>> {
     let malicious_withhold_count = chain.config.malicious_withhold_count;
     let mut data_column_sidecars = data_column_sidecars
         .iter()
@@ -538,8 +541,11 @@ fn publish_column_sidecars<T: BeaconChainTypes>(
             PubsubMessage::DataColumnSidecar(Box::new((subnet, data_col)))
         })
         .collect::<Vec<_>>();
-    crate::publish_pubsub_messages(sender_clone, pubsub_messages)
-        .map_err(|_| BlockError::BeaconChainError(BeaconChainError::UnableToPublish))
+    crate::publish_pubsub_messages(sender_clone, pubsub_messages).map_err(|_| {
+        Box::new(BlockError::BeaconChainError(
+            BeaconChainError::UnableToPublish,
+        ))
+    })
 }
 
 async fn post_block_import_logging_and_response<T: BeaconChainTypes>(
@@ -596,7 +602,7 @@ async fn post_block_import_logging_and_response<T: BeaconChainTypes>(
                 Err(warp_utils::reject::custom_bad_request(msg))
             }
         }
-        Err(BlockError::BeaconChainError(e)) if matches!(e, BeaconChainError::UnableToPublish) => {
+        Err(BlockError::BeaconChainError(BeaconChainError::UnableToPublish)) => {
             Err(warp_utils::reject::custom_server_error(
                 "unable to publish to network channel".to_string(),
             ))
@@ -784,7 +790,7 @@ fn check_slashable<T: BeaconChainTypes>(
     chain_clone: &BeaconChain<T>,
     block_root: Hash256,
     block_clone: &SignedBeaconBlock<T::EthSpec, FullPayload<T::EthSpec>>,
-) -> Result<(), BlockError> {
+) -> Result<(), Box<BlockError>> {
     let slashable_cache = chain_clone.observed_slashable.read();
     if slashable_cache
         .is_slashable(
@@ -792,13 +798,13 @@ fn check_slashable<T: BeaconChainTypes>(
             block_clone.message().proposer_index(),
             block_root,
         )
-        .map_err(|e| BlockError::BeaconChainError(e.into()))?
+        .map_err(|e| Box::new(BlockError::BeaconChainError(e.into())))?
     {
         warn!(
             slot = %block_clone.slot(),
             "Not publishing equivocating block"
         );
-        return Err(BlockError::Slashable);
+        return Err(Box::new(BlockError::Slashable));
     }
     Ok(())
 }

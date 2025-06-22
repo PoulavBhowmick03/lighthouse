@@ -504,7 +504,7 @@ where
             "prepare_execution_payload_forkchoice_update_params",
         )
         .await
-        .map_err(|e| BlockProductionError::BeaconChain(e))?;
+        .map_err(BlockProductionError::BeaconChain)?;
 
     let suggested_fee_recipient = execution_layer
         .get_suggested_fee_recipient(proposer_index)

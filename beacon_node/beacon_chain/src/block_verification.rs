@@ -474,40 +474,38 @@ impl From<BlockSignatureVerifierError> for BlockError {
                 block,
                 local_shuffling,
             },
-            e => BlockError::BeaconChainError(
-                BeaconChainError::BlockSignatureVerifierError(e).into(),
-            ),
+            e => BlockError::BeaconChainError(BeaconChainError::BlockSignatureVerifierError(e)),
         }
     }
 }
 
 impl From<BeaconChainError> for BlockError {
     fn from(e: BeaconChainError) -> Self {
-        BlockError::BeaconChainError(e.into())
+        BlockError::BeaconChainError(e)
     }
 }
 
 impl From<BeaconStateError> for BlockError {
     fn from(e: BeaconStateError) -> Self {
-        BlockError::BeaconChainError(BeaconChainError::BeaconStateError(e).into())
+        BlockError::BeaconChainError(BeaconChainError::BeaconStateError(e))
     }
 }
 
 impl From<SlotProcessingError> for BlockError {
     fn from(e: SlotProcessingError) -> Self {
-        BlockError::BeaconChainError(BeaconChainError::SlotProcessingError(e).into())
+        BlockError::BeaconChainError(BeaconChainError::SlotProcessingError(e))
     }
 }
 
 impl From<DBError> for BlockError {
     fn from(e: DBError) -> Self {
-        BlockError::BeaconChainError(BeaconChainError::DBError(e).into())
+        BlockError::BeaconChainError(BeaconChainError::DBError(e))
     }
 }
 
 impl From<ArithError> for BlockError {
     fn from(e: ArithError) -> Self {
-        BlockError::BeaconChainError(BeaconChainError::ArithError(e).into())
+        BlockError::BeaconChainError(BeaconChainError::ArithError(e))
     }
 }
 
@@ -1865,14 +1863,16 @@ fn load_parent<T: BeaconChainTypes, B: AsBlock<T::EthSpec>>(
         let root = block.parent_root();
         let parent_block = chain
             .get_blinded_block(&block.parent_root())
-            .map_err(|e| BlockError::BeaconChainError(e))?
+            .map_err(BlockError::BeaconChainError)?
             .ok_or_else(|| {
                 // Return a `MissingBeaconBlock` error instead of a `ParentUnknown` error since
                 // we've already checked fork choice for this block.
                 //
                 // It's an internal error if the block exists in fork choice but not in the
                 // database.
-                BlockError::from(BeaconChainError::MissingBeaconBlock(block.parent_root()))
+                BlockError::from(BeaconChainError::MissingBeaconBlock(Box::new(
+                    block.parent_root(),
+                )))
             })?;
 
         // Load the parent block's state from the database, returning an error if it is not found.

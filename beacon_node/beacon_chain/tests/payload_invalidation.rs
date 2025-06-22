@@ -509,7 +509,7 @@ async fn justified_checkpoint_becomes_invalid() {
     };
     rig.import_block_parametric(is_valid, is_valid, None, |error| match error {
         BlockError::BeaconChainError(e) => {
-            matches!(e.as_ref(), BeaconChainError::JustifiedPayloadInvalid { .. })
+            matches!(e, BeaconChainError::JustifiedPayloadInvalid { .. })
         }
         _ => false,
     })
@@ -1244,7 +1244,7 @@ async fn attesting_to_optimistic_head() {
                     beacon_block_root,
                     execution_status
                 })
-                if beacon_block_root == root && matches!(execution_status, ExecutionStatus::Optimistic(_))
+                if *beacon_block_root == root && matches!(execution_status, ExecutionStatus::Optimistic(_))
             ));
         }
     }

@@ -95,13 +95,8 @@ fn duties_from_state_load<T: BeaconChainTypes>(
         .ok_or(BeaconChainError::UnableToReadSlot)?
         .epoch(T::EthSpec::slots_per_epoch());
 
-    let max_sync_committee_period = tolerant_current_epoch
-        .sync_committee_period(&chain.spec)
-        .map_err(|e| e)?
-        + 1;
-    let sync_committee_period = request_epoch
-        .sync_committee_period(&chain.spec)
-        .map_err(|e| e)?;
+    let max_sync_committee_period = tolerant_current_epoch.sync_committee_period(&chain.spec)? + 1;
+    let sync_committee_period = request_epoch.sync_committee_period(&chain.spec)?;
 
     if tolerant_current_epoch < altair_fork_epoch {
         // Empty response if the epoch is pre-Altair.

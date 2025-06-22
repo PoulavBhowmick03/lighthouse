@@ -52,7 +52,8 @@ pub fn get_state_before_applying_block<T: BeaconChainTypes>(
     let parent_block: SignedBlindedBeaconBlock<T::EthSpec> = chain
         .get_blinded_block(&block.parent_root())
         .and_then(|maybe_block| {
-            maybe_block.ok_or_else(|| BeaconChainError::MissingBeaconBlock(block.parent_root()))
+            maybe_block
+                .ok_or_else(|| BeaconChainError::MissingBeaconBlock(Box::new(block.parent_root())))
         })
         .map_err(|e| custom_not_found(format!("Parent block is not available! {:?}", e)))?;
 
@@ -61,8 +62,9 @@ pub fn get_state_before_applying_block<T: BeaconChainTypes>(
     let parent_state = chain
         .get_state(&parent_block.state_root(), Some(parent_block.slot()), true)
         .and_then(|maybe_state| {
-            maybe_state
-                .ok_or_else(|| BeaconChainError::MissingBeaconState(parent_block.state_root()))
+            maybe_state.ok_or_else(|| {
+                BeaconChainError::MissingBeaconState(Box::new(parent_block.state_root()))
+            })
         })
         .map_err(|e| custom_not_found(format!("Parent state is not available! {:?}", e)))?;
 

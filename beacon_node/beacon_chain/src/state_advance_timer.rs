@@ -64,7 +64,7 @@ enum Error {
 
 impl From<BeaconChainError> for Error {
     fn from(e: BeaconChainError) -> Self {
-        Self::BeaconChain(e.into())
+        Self::BeaconChain(e)
     }
 }
 

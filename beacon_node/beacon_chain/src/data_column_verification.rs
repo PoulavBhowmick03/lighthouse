@@ -166,13 +166,13 @@ pub enum GossipDataColumnError {
 
 impl From<BeaconChainError> for GossipDataColumnError {
     fn from(e: BeaconChainError) -> Self {
-        GossipDataColumnError::BeaconChainError(e.into())
+        GossipDataColumnError::BeaconChainError(e)
     }
 }
 
 impl From<BeaconStateError> for GossipDataColumnError {
     fn from(e: BeaconStateError) -> Self {
-        GossipDataColumnError::BeaconChainError(BeaconChainError::BeaconStateError(e).into())
+        GossipDataColumnError::BeaconChainError(BeaconChainError::BeaconStateError(e))
     }
 }
 

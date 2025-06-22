@@ -71,9 +71,9 @@ pub fn get_light_client_bootstrap<T: BeaconChainTypes>(
                 println!("{:?}", err);
                 err
             } else {
-                "No LightClientBootstrap found".to_string()
+                Box::new("No LightClientBootstrap found".to_string())
             };
-            warp_utils::reject::custom_not_found(error_message)
+            warp_utils::reject::custom_not_found(*error_message)
         })?
         .ok_or(warp_utils::reject::custom_not_found(
             "No LightClientBootstrap found".to_string(),

@@ -147,13 +147,13 @@ impl std::fmt::Display for GossipBlobError {
 
 impl From<BeaconChainError> for GossipBlobError {
     fn from(e: BeaconChainError) -> Self {
-        GossipBlobError::BeaconChainError(e.into())
+        GossipBlobError::BeaconChainError(e)
     }
 }
 
 impl From<BeaconStateError> for GossipBlobError {
     fn from(e: BeaconStateError) -> Self {
-        GossipBlobError::BeaconChainError(BeaconChainError::BeaconStateError(e).into())
+        GossipBlobError::BeaconChainError(BeaconChainError::BeaconStateError(e))
     }
 }
 

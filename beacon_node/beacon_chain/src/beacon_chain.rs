@@ -768,12 +768,12 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
     ) -> Result<impl Iterator<Item = Result<(Hash256, Slot), Error>> + '_, Error> {
         let block = self
             .get_blinded_block(&block_root)?
-            .ok_or(Error::MissingBeaconBlock(block_root))?;
+            .ok_or(Error::MissingBeaconBlock(Box::new(block_root)))?;
         // This method is only used in tests, so we may as well cache states to make CI go brr.
         // TODO(release-v7) move this method out of beacon chain and into `store_tests`` or something equivalent.
         let state = self
             .get_state(&block.state_root(), Some(block.slot()), true)?
-            .ok_or_else(|| Error::MissingBeaconState(block.state_root()))?;
+            .ok_or_else(|| Error::MissingBeaconState(Box::new(block.state_root())))?;
         let iter = BlockRootsIterator::owned(&self.store, state);
         Ok(std::iter::once(Ok((block_root, block.slot())))
             .chain(iter)
@@ -1237,7 +1237,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
                 if reconstruction_possible {
                     reconstruct_blobs(&self.kzg, &columns, None, &block, &self.spec)
                         .map(Some)
-                        .map_err(Error::FailedToReconstructBlobs)
+                        .map_err(|e| Error::FailedToReconstructBlobs(Box::new(e)))
                 } else {
                     Err(Error::InsufficientColumnsToReconstructBlobs {
                         columns_found: columns.len(),
@@ -1683,7 +1683,9 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
             .store
             .load_hot_state_summary(&state_root)
             .map_err(BeaconChainError::DBError)?
-            .ok_or(BeaconChainError::MissingHotStateSummary(state_root))?;
+            .ok_or(BeaconChainError::MissingHotStateSummary(Box::new(
+                state_root,
+            )))?;
 
         if slot != checkpoint.epoch.start_slot(T::EthSpec::slots_per_epoch())
             || latest_block_root != *checkpoint.root
@@ -2859,7 +2861,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
             Err(error) => {
                 return ChainSegmentResult::Failed {
                     imported_blocks,
-                    error: BlockError::BeaconChainError(error.into()),
+                    error: BlockError::BeaconChainError(error),
                 }
             }
         };
@@ -2898,7 +2900,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
                 Err(error) => {
                     return ChainSegmentResult::Failed {
                         imported_blocks,
-                        error: BlockError::BeaconChainError(error.into()),
+                        error: BlockError::BeaconChainError(error),
                     };
                 }
             };
@@ -4818,11 +4820,11 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
             } else {
                 let block = self
                     .get_blinded_block(&parent_block_root)?
-                    .ok_or(Error::MissingBeaconBlock(parent_block_root))?;
+                    .ok_or(Error::MissingBeaconBlock(Box::new(parent_block_root)))?;
                 let (state_root, state) = self
                     .store
                     .get_advanced_hot_state(parent_block_root, proposal_slot, block.state_root())?
-                    .ok_or(Error::MissingBeaconState(block.state_root()))?;
+                    .ok_or(Error::MissingBeaconState(Box::new(block.state_root())))?;
                 (Cow::Owned(state), state_root)
             };
 
@@ -4833,7 +4835,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         if head_state.current_epoch() == proposal_epoch {
             return get_expected_withdrawals(&unadvanced_state, &self.spec)
                 .map(|(withdrawals, _)| withdrawals)
-                .map_err(Error::PrepareProposerFailed);
+                .map_err(|e| Error::PrepareProposerFailed(Box::new(e)));
         }
 
         // Advance the state using the partial method.
@@ -4851,7 +4853,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         )?;
         get_expected_withdrawals(&advanced_state, &self.spec)
             .map(|(withdrawals, _)| withdrawals)
-            .map_err(Error::PrepareProposerFailed)
+            .map_err(|e| Error::PrepareProposerFailed(Box::new(e)))
     }
 
     /// Determine whether a fork choice update to the execution layer should be overridden.
@@ -4909,7 +4911,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
                 &self.config.re_org_disallowed_offsets,
                 self.config.re_org_max_epochs_since_finalization,
             )
-            .map_err(|e| e.map_inner_error(Error::ProposerHeadForkChoiceError))?;
+            .map_err(|e| e.map_inner_error(|e| Error::ProposerHeadForkChoiceError(Box::new(e))))?;
 
         // The slot of our potential re-org block is always 1 greater than the head block because we
         // only attempt single-slot re-orgs.
@@ -5227,7 +5229,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
             slot: state.slot(),
             chain_health: self
                 .is_healthy(&parent_root)
-                .map_err(|e| BlockProductionError::BeaconChain(e))?,
+                .map_err(BlockProductionError::BeaconChain)?,
         };
 
         // If required, start the process of loading an execution payload from the EL early. This
@@ -6196,11 +6198,12 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
                         .await
                     {
                         // We are a proposer, check for terminal_pow_block_hash
-                        if let Some(terminal_pow_block_hash) = execution_layer
+                        let terminal_pow_block_hash_opt = execution_layer
                             .get_terminal_pow_block_hash(&self.spec, payload_attributes.timestamp())
                             .await
-                            .map_err(Error::ForkchoiceUpdate)?
-                        {
+                            .map_err(|e| Error::ForkchoiceUpdate(Box::new(e)))?;
+
+                        if let Some(terminal_pow_block_hash) = terminal_pow_block_hash_opt {
                             info!(
                                 slot = %next_slot,
                                 "Prepared POS transition block proposer"
@@ -6237,7 +6240,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
                 head_block_root,
             )
             .await
-            .map_err(Error::ExecutionForkChoiceUpdateFailed);
+            .map_err(|e| Error::ExecutionForkChoiceUpdateFailed(Box::new(e)));
 
         // The head has been read and the execution layer has been updated. It is now valid to send
         // another fork choice update.
@@ -6591,7 +6594,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
             .canonical_head
             .fork_choice_read_lock()
             .get_block(&head_block_root)
-            .ok_or(Error::MissingBeaconBlock(head_block_root))?;
+            .ok_or(Error::MissingBeaconBlock(Box::new(head_block_root)))?;
 
         let shuffling_id = BlockShufflingIds {
             current: head_block.current_epoch_shuffling_id.clone(),
@@ -6688,7 +6691,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
                 let (state_root, state) = self
                     .store
                     .get_advanced_hot_state(head_block_root, target_slot, head_block.state_root)?
-                    .ok_or(Error::MissingBeaconState(head_block.state_root))?;
+                    .ok_or(Error::MissingBeaconState(Box::new(head_block.state_root)))?;
                 (state, state_root)
             };
 
