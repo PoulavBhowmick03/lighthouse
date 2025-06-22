@@ -1237,7 +1237,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
                 if reconstruction_possible {
                     reconstruct_blobs(&self.kzg, &columns, None, &block, &self.spec)
                         .map(Some)
-                        .map_err(|e| Error::FailedToReconstructBlobs(Box::new(e)))
+                        .map_err(Error::FailedToReconstructBlobs)
                 } else {
                     Err(Error::InsufficientColumnsToReconstructBlobs {
                         columns_found: columns.len(),
@@ -1776,9 +1776,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         {
             // The attestation references a block that is not in fork choice, it must be
             // pre-finalization.
-            None => Err(Error::CannotAttestToFinalizedBlock {
-                beacon_block_root,
-            }),
+            None => Err(Error::CannotAttestToFinalizedBlock { beacon_block_root }),
             // The attestation references a fully valid `beacon_block_root`.
             Some(execution_status) if execution_status.is_valid_or_irrelevant() => Ok(attestation),
             // The attestation references a block that has not been verified by an EL (i.e. it
@@ -1819,9 +1817,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         {
             // The contribution references a block that is not in fork choice, it must be
             // pre-finalization.
-            None => Err(Error::SyncContributionDataReferencesFinalizedBlock {
-                beacon_block_root,
-            }),
+            None => Err(Error::SyncContributionDataReferencesFinalizedBlock { beacon_block_root }),
             // The contribution references a fully valid `beacon_block_root`.
             Some(execution_status) if execution_status.is_valid_or_irrelevant() => Ok(contribution),
             // The contribution references a block that has not been verified by an EL (i.e. it

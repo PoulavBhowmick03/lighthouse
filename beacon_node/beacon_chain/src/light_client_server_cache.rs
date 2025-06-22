@@ -357,8 +357,8 @@ impl<T: BeaconChainTypes> LightClientServerCache<T> {
         chain_spec: &ChainSpec,
     ) -> Result<Option<(LightClientBootstrap<T::EthSpec>, ForkName)>, BeaconChainError> {
         let Some(block) = store.get_blinded_block(block_root)? else {
-            return Err(BeaconChainError::LightClientBootstrapError(Box::new(
-                format!("Block root {block_root} not found"),
+            return Err(BeaconChainError::LightClientBootstrapError(format!(
+                "Block root {block_root} not found"
             )));
         };
 
@@ -373,23 +373,21 @@ impl<T: BeaconChainTypes> LightClientServerCache<T> {
 
         let Some(current_sync_committee_branch) = store.get_sync_committee_branch(block_root)?
         else {
-            return Err(BeaconChainError::LightClientBootstrapError(Box::new(
-                format!(
-                    "Sync committee branch for block root {:?} not found",
-                    block_root
-                ),
+            return Err(BeaconChainError::LightClientBootstrapError(format!(
+                "Sync committee branch for block root {:?} not found",
+                block_root
             )));
         };
 
         if sync_committee_period > finalized_period {
             return Err(BeaconChainError::LightClientBootstrapError(
-                Box::new(format!("The blocks sync committee period {sync_committee_period} is greater than the current finalized period {finalized_period}")),
+                format!("The blocks sync committee period {sync_committee_period} is greater than the current finalized period {finalized_period}"),
             ));
         }
 
         let Some(current_sync_committee) = store.get_sync_committee(sync_committee_period)? else {
-            return Err(BeaconChainError::LightClientBootstrapError(Box::new(
-                format!("Sync committee for period {sync_committee_period} not found"),
+            return Err(BeaconChainError::LightClientBootstrapError(format!(
+                "Sync committee for period {sync_committee_period} not found",
             )));
         };
 

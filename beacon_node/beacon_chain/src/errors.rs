@@ -217,10 +217,10 @@ pub enum BeaconChainError {
     InconsistentFork(InconsistentFork),
     ProposerHeadForkChoiceError(Box<fork_choice::Error<proto_array::Error>>),
     UnableToPublish,
-    UnableToBuildColumnSidecar(Box<String>),
+    UnableToBuildColumnSidecar(String),
     AvailabilityCheckError(AvailabilityCheckError),
     LightClientUpdateError(LightClientUpdateError),
-    LightClientBootstrapError(Box<String>),
+    LightClientBootstrapError(String),
     UnsupportedFork,
     MilhouseError(MilhouseError),
     EmptyRpcCustodyColumns,
@@ -229,7 +229,7 @@ pub enum BeaconChainError {
     InsufficientColumnsToReconstructBlobs {
         columns_found: usize,
     },
-    FailedToReconstructBlobs(Box<String>),
+    FailedToReconstructBlobs(String),
 }
 
 easy_from_to!(SlotProcessingError, BeaconChainError);
