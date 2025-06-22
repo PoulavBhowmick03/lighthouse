@@ -1688,7 +1688,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         {
             return Err(BeaconChainError::InvalidCheckpoint {
                 state_root,
-                checkpoint: Box::new(checkpoint),
+                checkpoint,
             });
         }
 
@@ -4823,7 +4823,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         if head_state.current_epoch() == proposal_epoch {
             return get_expected_withdrawals(&unadvanced_state, &self.spec)
                 .map(|(withdrawals, _)| withdrawals)
-                .map_err(|e| Error::PrepareProposerFailed(Box::new(e)));
+                .map_err(Error::PrepareProposerFailed);
         }
 
         // Advance the state using the partial method.
@@ -4841,7 +4841,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         )?;
         get_expected_withdrawals(&advanced_state, &self.spec)
             .map(|(withdrawals, _)| withdrawals)
-            .map_err(|e| Error::PrepareProposerFailed(Box::new(e)))
+            .map_err(Error::PrepareProposerFailed)
     }
 
     /// Determine whether a fork choice update to the execution layer should be overridden.
@@ -4899,7 +4899,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
                 &self.config.re_org_disallowed_offsets,
                 self.config.re_org_max_epochs_since_finalization,
             )
-            .map_err(|e| e.map_inner_error(|e| Error::ProposerHeadForkChoiceError(Box::new(e))))?;
+            .map_err(|e| e.map_inner_error(Error::ProposerHeadForkChoiceError))?;
 
         // The slot of our potential re-org block is always 1 greater than the head block because we
         // only attempt single-slot re-orgs.

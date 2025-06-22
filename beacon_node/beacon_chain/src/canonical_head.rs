@@ -1070,8 +1070,8 @@ fn check_against_finality_reversion(
         Ok(())
     } else {
         Err(Error::RevertedFinalizedEpoch {
-            old: Box::new(old_view.finalized_checkpoint),
-            new: Box::new(new_view.finalized_checkpoint),
+            old: old_view.finalized_checkpoint,
+            new: new_view.finalized_checkpoint,
         })
     }
 }

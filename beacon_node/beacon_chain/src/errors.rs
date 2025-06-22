@@ -47,8 +47,8 @@ pub enum BeaconChainError {
     UnableToReadSlot,
     UnableToComputeTimeAtSlot,
     RevertedFinalizedEpoch {
-        old: Box<Checkpoint>,
-        new: Box<Checkpoint>,
+        old: Checkpoint,
+        new: Checkpoint,
     },
     SlotClockDidNotStart,
     NoStateForSlot(Slot),
@@ -158,7 +158,7 @@ pub enum BeaconChainError {
     BlockStreamerError(BlockStreamerError),
     AddPayloadLogicError,
     ExecutionForkChoiceUpdateFailed(Box<execution_layer::Error>),
-    PrepareProposerFailed(Box<BlockProcessingError>),
+    PrepareProposerFailed(BlockProcessingError),
     ExecutionForkChoiceUpdateInvalid {
         status: PayloadStatus,
     },
@@ -183,7 +183,7 @@ pub enum BeaconChainError {
     ForkchoiceUpdate(Box<execution_layer::Error>),
     InvalidCheckpoint {
         state_root: Hash256,
-        checkpoint: Box<Checkpoint>,
+        checkpoint: Checkpoint,
     },
     InvalidSlot(Slot),
     HeadBlockNotFullyVerified {
@@ -215,7 +215,7 @@ pub enum BeaconChainError {
     BlsToExecutionPriorToCapella,
     BlsToExecutionConflictsWithPool,
     InconsistentFork(InconsistentFork),
-    ProposerHeadForkChoiceError(Box<fork_choice::Error<proto_array::Error>>),
+    ProposerHeadForkChoiceError(fork_choice::Error<proto_array::Error>),
     UnableToPublish,
     UnableToBuildColumnSidecar(String),
     AvailabilityCheckError(AvailabilityCheckError),
