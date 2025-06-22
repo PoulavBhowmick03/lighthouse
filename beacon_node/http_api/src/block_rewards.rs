@@ -46,9 +46,7 @@ pub fn get_block_rewards<T: BeaconChainTypes>(
     // to cache states so that future calls are faster.
     let mut state = chain
         .get_state(&state_root, Some(prior_slot), true)
-        .and_then(|maybe_state| {
-            maybe_state.ok_or(BeaconChainError::MissingBeaconState(Box::new(state_root)))
-        })
+        .and_then(|maybe_state| maybe_state.ok_or(BeaconChainError::MissingBeaconState(state_root)))
         .map_err(unhandled_error)?;
 
     state

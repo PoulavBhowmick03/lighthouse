@@ -55,7 +55,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         // to cache states so that future calls are faster.
         let state = self
             .get_state(&state_root, Some(state_slot), true)?
-            .ok_or(BeaconChainError::MissingBeaconState(Box::new(state_root)))?;
+            .ok_or(BeaconChainError::MissingBeaconState(state_root))?;
 
         if state.fork_name_unchecked().altair_enabled() {
             self.compute_attestation_rewards_altair(state, validators)

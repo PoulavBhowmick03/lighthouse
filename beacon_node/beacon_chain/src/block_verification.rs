@@ -1430,9 +1430,9 @@ impl<T: BeaconChainTypes> ExecutionPendingBlock<T> {
         let parent_slot = parent.beacon_block.slot();
         if state.slot() < parent_slot || state.slot() > block.slot() {
             return Err(BeaconChainError::BadPreState {
-                parent_root: Box::new(parent.beacon_block_root),
+                parent_root: parent.beacon_block_root,
                 parent_slot,
-                block_root: Box::new(block_root),
+                block_root,
                 block_slot: block.slot(),
                 state_slot: state.slot(),
             }
@@ -1870,9 +1870,7 @@ fn load_parent<T: BeaconChainTypes, B: AsBlock<T::EthSpec>>(
                 //
                 // It's an internal error if the block exists in fork choice but not in the
                 // database.
-                BlockError::from(BeaconChainError::MissingBeaconBlock(Box::new(
-                    block.parent_root(),
-                )))
+                BlockError::from(BeaconChainError::MissingBeaconBlock(block.parent_root()))
             })?;
 
         // Load the parent block's state from the database, returning an error if it is not found.

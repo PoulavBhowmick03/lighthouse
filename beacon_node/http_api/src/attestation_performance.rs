@@ -111,9 +111,7 @@ pub fn get_attestation_performance<T: BeaconChainTypes>(
     let first_block = chain
         .get_blinded_block(first_block_root)
         .and_then(|maybe_block| {
-            maybe_block.ok_or(BeaconChainError::MissingBeaconBlock(Box::new(
-                *first_block_root,
-            )))
+            maybe_block.ok_or(BeaconChainError::MissingBeaconBlock(*first_block_root))
         })
         .map_err(unhandled_error)?;
 
@@ -121,9 +119,8 @@ pub fn get_attestation_performance<T: BeaconChainTypes>(
     let prior_block = chain
         .get_blinded_block(&first_block.parent_root())
         .and_then(|maybe_block| {
-            maybe_block.ok_or_else(|| {
-                BeaconChainError::MissingBeaconBlock(Box::new(first_block.parent_root()))
-            })
+            maybe_block
+                .ok_or_else(|| BeaconChainError::MissingBeaconBlock(first_block.parent_root()))
         })
         .map_err(unhandled_error)?;
 
@@ -134,9 +131,7 @@ pub fn get_attestation_performance<T: BeaconChainTypes>(
     // to cache states so that future calls are faster.
     let state = chain
         .get_state(&state_root, Some(prior_slot), true)
-        .and_then(|maybe_state| {
-            maybe_state.ok_or(BeaconChainError::MissingBeaconState(Box::new(state_root)))
-        })
+        .and_then(|maybe_state| maybe_state.ok_or(BeaconChainError::MissingBeaconState(state_root)))
         .map_err(unhandled_error)?;
 
     // Allocate an AttestationPerformance vector for each validator in the range.
@@ -204,7 +199,7 @@ pub fn get_attestation_performance<T: BeaconChainTypes>(
                 chain
                     .get_blinded_block(root)
                     .and_then(|maybe_block| {
-                        maybe_block.ok_or(BeaconChainError::MissingBeaconBlock(Box::new(*root)))
+                        maybe_block.ok_or(BeaconChainError::MissingBeaconBlock(*root))
                     })
                     .map_err(unhandled_error)
             })

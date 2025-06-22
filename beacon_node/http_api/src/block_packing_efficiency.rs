@@ -278,9 +278,7 @@ pub fn get_block_packing_efficiency<T: BeaconChainTypes>(
     let first_block = chain
         .get_blinded_block(first_block_root)
         .and_then(|maybe_block| {
-            maybe_block.ok_or(BeaconChainError::MissingBeaconBlock(Box::new(
-                *first_block_root,
-            )))
+            maybe_block.ok_or(BeaconChainError::MissingBeaconBlock(*first_block_root))
         })
         .map_err(unhandled_error)?;
 
@@ -292,9 +290,7 @@ pub fn get_block_packing_efficiency<T: BeaconChainTypes>(
     let starting_state = chain
         .get_state(&starting_state_root, Some(prior_slot), true)
         .and_then(|maybe_state| {
-            maybe_state.ok_or(BeaconChainError::MissingBeaconState(Box::new(
-                starting_state_root,
-            )))
+            maybe_state.ok_or(BeaconChainError::MissingBeaconState(starting_state_root))
         })
         .map_err(unhandled_error)?;
 
@@ -396,7 +392,7 @@ pub fn get_block_packing_efficiency<T: BeaconChainTypes>(
                 chain
                     .get_blinded_block(root)
                     .and_then(|maybe_block| {
-                        maybe_block.ok_or(BeaconChainError::MissingBeaconBlock(Box::new(*root)))
+                        maybe_block.ok_or(BeaconChainError::MissingBeaconBlock(*root))
                     })
                     .map_err(unhandled_error)
             })

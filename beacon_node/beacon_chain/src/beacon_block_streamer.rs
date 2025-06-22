@@ -121,8 +121,8 @@ fn reconstruct_default_header_block<E: EthSpec>(
         Err(BeaconChainError::InconsistentPayloadReconstructed {
             slot: blinded_block.slot(),
             exec_block_hash: header_from_block.block_hash(),
-            canonical_transactions_root: Box::new(header_from_block.transactions_root()),
-            reconstructed_transactions_root: Box::new(header_from_payload.transactions_root()),
+            canonical_transactions_root: header_from_block.transactions_root(),
+            reconstructed_transactions_root: header_from_payload.transactions_root(),
         })
     }
 }
@@ -152,12 +152,9 @@ fn reconstruct_blocks<E: EthSpec>(
                         let error = BeaconChainError::InconsistentPayloadReconstructed {
                             slot: block_parts.blinded_block.slot(),
                             exec_block_hash: block_parts.header.block_hash(),
-                            canonical_transactions_root: Box::new(
-                                block_parts.header.transactions_root(),
-                            ),
-                            reconstructed_transactions_root: Box::new(
-                                header_from_payload.transactions_root(),
-                            ),
+                            canonical_transactions_root: block_parts.header.transactions_root(),
+                            reconstructed_transactions_root: header_from_payload
+                                .transactions_root(),
                         };
                         debug!(?root, ?error, "Failed to reconstruct block");
                         block_map.insert(root, Arc::new(Err(error)));

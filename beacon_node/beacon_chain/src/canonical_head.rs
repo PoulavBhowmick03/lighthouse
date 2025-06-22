@@ -295,13 +295,11 @@ impl<T: BeaconChainTypes> CanonicalHead<T> {
         let beacon_block_root = fork_choice_view.head_block_root;
         let beacon_block = store
             .get_full_block(&beacon_block_root)?
-            .ok_or(Error::MissingBeaconBlock(Box::new(beacon_block_root)))?;
+            .ok_or(Error::MissingBeaconBlock(beacon_block_root))?;
         let current_slot = fork_choice.fc_store().get_current_slot();
         let (_, beacon_state) = store
             .get_advanced_hot_state(beacon_block_root, current_slot, beacon_block.state_root())?
-            .ok_or(Error::MissingBeaconState(Box::new(
-                beacon_block.state_root(),
-            )))?;
+            .ok_or(Error::MissingBeaconState(beacon_block.state_root()))?;
 
         let snapshot = BeaconSnapshot {
             beacon_block_root,
@@ -336,7 +334,7 @@ impl<T: BeaconChainTypes> CanonicalHead<T> {
         let head_block_root = self.cached_head().head_block_root();
         self.fork_choice_read_lock()
             .get_block_execution_status(&head_block_root)
-            .ok_or(Error::HeadMissingFromForkChoice(Box::new(head_block_root)))
+            .ok_or(Error::HeadMissingFromForkChoice(head_block_root))
     }
 
     /// Returns a clone of the `CachedHead` and the execution status of the contained head block.
@@ -352,7 +350,7 @@ impl<T: BeaconChainTypes> CanonicalHead<T> {
         let execution_status = self
             .fork_choice_read_lock()
             .get_block_execution_status(&head_block_root)
-            .ok_or(Error::HeadMissingFromForkChoice(Box::new(head_block_root)))?;
+            .ok_or(Error::HeadMissingFromForkChoice(head_block_root))?;
         Ok((head, execution_status))
     }
 
@@ -594,9 +592,9 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
 
         let new_head_proto_block = fork_choice_read_lock
             .get_block(&new_view.head_block_root)
-            .ok_or(Error::HeadBlockMissingFromForkChoice(Box::new(
+            .ok_or(Error::HeadBlockMissingFromForkChoice(
                 new_view.head_block_root,
-            )))?;
+            ))?;
 
         // Do not allow an invalid block to become the head.
         //
@@ -612,7 +610,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         // However, this check is cheap.
         if new_head_proto_block.execution_status.is_invalid() {
             return Err(Error::HeadHasInvalidPayload {
-                block_root: Box::new(new_head_proto_block.root),
+                block_root: new_head_proto_block.root,
                 execution_status: new_head_proto_block.execution_status,
             });
         }
@@ -646,9 +644,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
                 let beacon_block = self
                     .store
                     .get_full_block(&new_view.head_block_root)?
-                    .ok_or(Error::MissingBeaconBlock(Box::new(
-                        new_view.head_block_root,
-                    )))?;
+                    .ok_or(Error::MissingBeaconBlock(new_view.head_block_root))?;
 
                 let (_, beacon_state) = self
                     .store
@@ -657,9 +653,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
                         current_slot,
                         beacon_block.state_root(),
                     )?
-                    .ok_or(Error::MissingBeaconState(Box::new(
-                        beacon_block.state_root(),
-                    )))?;
+                    .ok_or(Error::MissingBeaconState(beacon_block.state_root()))?;
 
                 BeaconSnapshot {
                     beacon_block: Arc::new(beacon_block),
@@ -1055,7 +1049,7 @@ fn check_finalized_payload_validity<T: BeaconChainTypes>(
 
         // Exit now, the node is in an invalid state.
         return Err(Error::InvalidFinalizedPayload {
-            finalized_root: Box::new(finalized_proto_block.root),
+            finalized_root: finalized_proto_block.root,
             execution_block_hash: block_hash,
         });
     }

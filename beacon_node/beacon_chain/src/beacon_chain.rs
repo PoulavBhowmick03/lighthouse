@@ -768,12 +768,12 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
     ) -> Result<impl Iterator<Item = Result<(Hash256, Slot), Error>> + '_, Error> {
         let block = self
             .get_blinded_block(&block_root)?
-            .ok_or(Error::MissingBeaconBlock(Box::new(block_root)))?;
+            .ok_or(Error::MissingBeaconBlock(block_root))?;
         // This method is only used in tests, so we may as well cache states to make CI go brr.
         // TODO(release-v7) move this method out of beacon chain and into `store_tests`` or something equivalent.
         let state = self
             .get_state(&block.state_root(), Some(block.slot()), true)?
-            .ok_or_else(|| Error::MissingBeaconState(Box::new(block.state_root())))?;
+            .ok_or_else(|| Error::MissingBeaconState(block.state_root()))?;
         let iter = BlockRootsIterator::owned(&self.store, state);
         Ok(std::iter::once(Ok((block_root, block.slot())))
             .chain(iter)
@@ -1179,8 +1179,8 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
             return Err(Error::InconsistentPayloadReconstructed {
                 slot: blinded_block.slot(),
                 exec_block_hash,
-                canonical_transactions_root: Box::new(execution_payload_header.transactions_root()),
-                reconstructed_transactions_root: Box::new(header_from_payload.transactions_root()),
+                canonical_transactions_root: execution_payload_header.transactions_root(),
+                reconstructed_transactions_root: header_from_payload.transactions_root(),
             });
         }
 
@@ -1629,9 +1629,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
             .canonical_head
             .fork_choice_read_lock()
             .get_block_execution_status(&head_block_root)
-            .ok_or(Error::AttestationHeadNotInForkChoice(Box::new(
-                head_block_root,
-            )))?;
+            .ok_or(Error::AttestationHeadNotInForkChoice(head_block_root))?;
 
         let (duties, dependent_root) = self.with_committee_cache(
             head_block_root,
@@ -1683,15 +1681,13 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
             .store
             .load_hot_state_summary(&state_root)
             .map_err(BeaconChainError::DBError)?
-            .ok_or(BeaconChainError::MissingHotStateSummary(Box::new(
-                state_root,
-            )))?;
+            .ok_or(BeaconChainError::MissingHotStateSummary(state_root))?;
 
         if slot != checkpoint.epoch.start_slot(T::EthSpec::slots_per_epoch())
             || latest_block_root != *checkpoint.root
         {
             return Err(BeaconChainError::InvalidCheckpoint {
-                state_root: Box::new(state_root),
+                state_root,
                 checkpoint: Box::new(checkpoint),
             });
         }
@@ -1781,14 +1777,14 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
             // The attestation references a block that is not in fork choice, it must be
             // pre-finalization.
             None => Err(Error::CannotAttestToFinalizedBlock {
-                beacon_block_root: Box::new(beacon_block_root),
+                beacon_block_root,
             }),
             // The attestation references a fully valid `beacon_block_root`.
             Some(execution_status) if execution_status.is_valid_or_irrelevant() => Ok(attestation),
             // The attestation references a block that has not been verified by an EL (i.e. it
             // is optimistic or invalid). Don't return the block, return an error instead.
             Some(execution_status) => Err(Error::HeadBlockNotFullyVerified {
-                beacon_block_root: Box::new(beacon_block_root),
+                beacon_block_root,
                 execution_status,
             }),
         }
@@ -1824,14 +1820,14 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
             // The contribution references a block that is not in fork choice, it must be
             // pre-finalization.
             None => Err(Error::SyncContributionDataReferencesFinalizedBlock {
-                beacon_block_root: Box::new(beacon_block_root),
+                beacon_block_root,
             }),
             // The contribution references a fully valid `beacon_block_root`.
             Some(execution_status) if execution_status.is_valid_or_irrelevant() => Ok(contribution),
             // The contribution references a block that has not been verified by an EL (i.e. it
             // is optimistic or invalid). Don't return the block, return an error instead.
             Some(execution_status) => Err(Error::HeadBlockNotFullyVerified {
-                beacon_block_root: Box::new(beacon_block_root),
+                beacon_block_root,
                 execution_status,
             }),
         }
@@ -1987,15 +1983,11 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
             Some(execution_status) if execution_status.is_valid_or_irrelevant() => (),
             Some(execution_status) => {
                 return Err(Error::HeadBlockNotFullyVerified {
-                    beacon_block_root: Box::new(beacon_block_root),
+                    beacon_block_root,
                     execution_status,
                 })
             }
-            None => {
-                return Err(Error::HeadMissingFromForkChoice(Box::new(
-                    beacon_block_root,
-                )))
-            }
+            None => return Err(Error::HeadMissingFromForkChoice(beacon_block_root)),
         };
 
         /*
@@ -2479,7 +2471,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         let fork_choice_lock = self.canonical_head.fork_choice_read_lock();
         let block = fork_choice_lock
             .get_block(block_root)
-            .ok_or(Error::AttestationHeadNotInForkChoice(Box::new(*block_root)))?;
+            .ok_or(Error::AttestationHeadNotInForkChoice(*block_root))?;
         drop(fork_choice_lock);
 
         let block_shuffling_id = if target_epoch == block.current_epoch_shuffling_id.shuffling_epoch
@@ -4820,11 +4812,11 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
             } else {
                 let block = self
                     .get_blinded_block(&parent_block_root)?
-                    .ok_or(Error::MissingBeaconBlock(Box::new(parent_block_root)))?;
+                    .ok_or(Error::MissingBeaconBlock(parent_block_root))?;
                 let (state_root, state) = self
                     .store
                     .get_advanced_hot_state(parent_block_root, proposal_slot, block.state_root())?
-                    .ok_or(Error::MissingBeaconState(Box::new(block.state_root())))?;
+                    .ok_or(Error::MissingBeaconState(block.state_root()))?;
                 (Cow::Owned(state), state_root)
             };
 
@@ -5899,7 +5891,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
 
             // Return an error here to try and prevent progression by upstream functions.
             return Err(Error::JustifiedPayloadInvalid {
-                justified_root: Box::new(justified_block.root),
+                justified_root: justified_block.root,
                 execution_block_hash: justified_block.execution_status.block_hash(),
             });
         }
@@ -6594,7 +6586,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
             .canonical_head
             .fork_choice_read_lock()
             .get_block(&head_block_root)
-            .ok_or(Error::MissingBeaconBlock(Box::new(head_block_root)))?;
+            .ok_or(Error::MissingBeaconBlock(head_block_root))?;
 
         let shuffling_id = BlockShufflingIds {
             current: head_block.current_epoch_shuffling_id.clone(),
@@ -6691,7 +6683,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
                 let (state_root, state) = self
                     .store
                     .get_advanced_hot_state(head_block_root, target_slot, head_block.state_root)?
-                    .ok_or(Error::MissingBeaconState(Box::new(head_block.state_root)))?;
+                    .ok_or(Error::MissingBeaconState(head_block.state_root))?;
                 (state, state_root)
             };
 
