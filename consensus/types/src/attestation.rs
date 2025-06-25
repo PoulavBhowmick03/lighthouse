@@ -637,6 +637,28 @@ impl SingleAttestation {
             })
         }
     }
+
+    pub fn empty_for_signing(
+        committee_index: u64,
+        attester_index: u64,
+        slot: Slot,
+        beacon_block_root: Hash256,
+        source: Checkpoint,
+        target: Checkpoint,
+    ) -> Self {
+        Self {
+            committee_index,
+            attester_index,
+            data: AttestationData {
+                slot,
+                index: committee_index,
+                beacon_block_root,
+                source,
+                target,
+            },
+            signature: AggregateSignature::infinity(),
+        }
+    }
 }
 
 #[cfg(test)]

@@ -10,7 +10,7 @@ use task_executor::TaskExecutor;
 use tokio::time::{Duration, Instant, sleep, sleep_until};
 use tracing::{debug, error, info, trace, warn};
 use tree_hash::TreeHash;
-use types::{Attestation, AttestationData, ChainSpec, CommitteeIndex, EthSpec, Slot};
+use types::{AttestationData, ChainSpec, CommitteeIndex, EthSpec, SingleAttestation, Slot};
 use validator_store::{Error as ValidatorStoreError, ValidatorStore};
 
 /// Builds an `AttestationService`.
@@ -379,41 +379,23 @@ impl<S: ValidatorStore + 'static, T: SlotClock + 'static> AttestationService<S, 
                 return None;
             }
 
-            let mut attestation = match Attestation::empty_for_signing(
+            let mut single_attestation = SingleAttestation::empty_for_signing(
                 duty.committee_index,
-                duty.committee_length as usize,
+                duty.validator_index,
                 attestation_data.slot,
                 attestation_data.beacon_block_root,
                 attestation_data.source,
                 attestation_data.target,
-                &self.chain_spec,
-            ) {
-                Ok(attestation) => attestation,
-                Err(err) => {
-                    crit!(
-                        validator = ?duty.pubkey,
-                        ?duty,
-                        ?err,
-                        "Invalid validator duties during signing"
-                    );
-                    return None;
-                }
-            };
+            );
 
+            // Sign the SingleAttestation
             match self
                 .validator_store
-                .sign_attestation(
-                    duty.pubkey,
-                    duty.validator_committee_index as usize,
-                    &mut attestation,
-                    current_epoch,
-                )
+                .sign_single_attestation(duty.pubkey, &mut single_attestation, current_epoch)
                 .await
             {
-                Ok(()) => Some((attestation, duty.validator_index)),
+                Ok(()) => Some(single_attestation),
                 Err(ValidatorStoreError::UnknownPubkey(pubkey)) => {
-                    // A pubkey can be missing when a validator was recently
-                    // removed via the API.
                     warn!(
                         info = "a validator may have recently been removed from this VC",
                         pubkey = ?pubkey,
@@ -438,59 +420,50 @@ impl<S: ValidatorStore + 'static, T: SlotClock + 'static> AttestationService<S, 
         });
 
         // Execute all the futures in parallel, collecting any successful results.
-        let (ref attestations, ref validator_indices): (Vec<_>, Vec<_>) = join_all(signing_futures)
+        let single_attestations: Vec<SingleAttestation> = join_all(signing_futures)
             .await
             .into_iter()
             .flatten()
-            .unzip();
+            .collect();
 
-        if attestations.is_empty() {
+        if single_attestations.is_empty() {
             warn!("No attestations were published");
             return Ok(None);
         }
+
+        // Extract validator indices BEFORE moving single_attestations into the closure
+        let validator_indices: Vec<u64> = single_attestations
+            .iter()
+            .map(|a| a.attester_index)
+            .collect();
+
         let fork_name = self
             .chain_spec
             .fork_name_at_slot::<S::E>(attestation_data.slot);
 
+        // Clone single_attestations before using it in the closure
+        let attestations_to_send = single_attestations.clone();
+
         // Post the attestations to the BN.
         match self
             .beacon_nodes
-            .request(ApiTopic::Attestations, |beacon_node| async move {
-                let _timer = validator_metrics::start_timer_vec(
-                    &validator_metrics::ATTESTATION_SERVICE_TIMES,
-                    &[validator_metrics::ATTESTATIONS_HTTP_POST],
-                );
+            .request(ApiTopic::Attestations, |beacon_node| {
+                let attestations = attestations_to_send.clone();
+                async move {
+                    let _timer = validator_metrics::start_timer_vec(
+                        &validator_metrics::ATTESTATION_SERVICE_TIMES,
+                        &[validator_metrics::ATTESTATIONS_HTTP_POST],
+                    );
 
-                let single_attestations = attestations
-                    .iter()
-                    .zip(validator_indices)
-                    .filter_map(|(a, i)| {
-                        match a.to_single_attestation_with_attester_index(*i) {
-                            Ok(a) => Some(a),
-                            Err(e) => {
-                                // This shouldn't happen unless BN and VC are out of sync with
-                                // respect to the Electra fork.
-                                error!(
-                                    error = ?e,
-                                    committee_index = attestation_data.index,
-                                    slot = slot.as_u64(),
-                                    "type" = "unaggregated",
-                                    "Unable to convert to SingleAttestation"
-                                );
-                                None
-                            }
-                        }
-                    })
-                    .collect::<Vec<_>>();
-
-                beacon_node
-                    .post_beacon_pool_attestations_v2::<S::E>(single_attestations, fork_name)
-                    .await
+                    beacon_node
+                        .post_beacon_pool_attestations_v2::<S::E>(attestations, fork_name)
+                        .await
+                }
             })
             .await
         {
             Ok(()) => info!(
-                count = attestations.len(),
+                count = single_attestations.len(),
                 validator_indices = ?validator_indices,
                 head_block = ?attestation_data.beacon_block_root,
                 committee_index = attestation_data.index,

@@ -6,8 +6,9 @@ use std::sync::Arc;
 use types::{
     Address, Attestation, AttestationError, BlindedBeaconBlock, Epoch, EthSpec, Graffiti, Hash256,
     PublicKeyBytes, SelectionProof, Signature, SignedAggregateAndProof, SignedBlindedBeaconBlock,
-    SignedContributionAndProof, SignedValidatorRegistrationData, Slot, SyncCommitteeContribution,
-    SyncCommitteeMessage, SyncSelectionProof, SyncSubnetId, ValidatorRegistrationData,
+    SignedContributionAndProof, SignedValidatorRegistrationData, SingleAttestation, Slot,
+    SyncCommitteeContribution, SyncCommitteeMessage, SyncSelectionProof, SyncSubnetId,
+    ValidatorRegistrationData,
 };
 
 #[derive(Debug, PartialEq, Clone)]
@@ -20,6 +21,7 @@ pub enum Error<T> {
     GreaterThanCurrentSlot { slot: Slot, current_slot: Slot },
     GreaterThanCurrentEpoch { epoch: Epoch, current_epoch: Epoch },
     UnableToSignAttestation(AttestationError),
+    ValidatorNotEnabled(PublicKeyBytes),
     SpecificError(T),
     Middleware(String),
 }
@@ -170,6 +172,14 @@ pub trait ValidatorStore: Send + Sync {
     /// `ProposalData` fields include defaulting logic described in `get_fee_recipient_defaulting`,
     /// `get_gas_limit_defaulting`, and `get_builder_proposals_defaulting`.
     fn proposal_data(&self, pubkey: &PublicKeyBytes) -> Option<ProposalData>;
+    /// Signs a SingleAttestation for a given validator.
+    ///
+    fn sign_single_attestation(
+        &self,
+        validator_pubkey: PublicKeyBytes,
+        single_attestation: &mut SingleAttestation,
+        current_epoch: Epoch,
+    ) -> impl Future<Output = Result<(), Error<Self::Error>>> + Send;
 }
 
 #[derive(Debug)]
