@@ -9,7 +9,7 @@ use std::cmp::Ordering;
 use std::io::{Read, Write};
 use std::ops::RangeInclusive;
 use std::str::FromStr;
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock};
 use superstruct::superstruct;
 use types::historical_summary::HistoricalSummary;
 use types::{BeaconState, ChainSpec, Epoch, EthSpec, Hash256, List, Slot, Validator};
@@ -100,7 +100,7 @@ pub struct HDiffBuffer {
     state: Vec<u8>,
     balances: Vec<u64>,
     inactivity_scores: Vec<u64>,
-    validators: Vec<Validator>,
+    validators: Arc<[Validator]>,
     historical_roots: Vec<Hash256>,
     historical_summaries: Vec<HistoricalSummary>,
 }
@@ -184,6 +184,7 @@ impl HDiffBuffer {
             vec![]
         };
         let validators = std::mem::take(beacon_state.validators_mut()).to_vec();
+        let validators = Arc::from(validators);
         let historical_roots = std::mem::take(beacon_state.historical_roots_mut()).to_vec();
         let historical_summaries =
             if let Ok(historical_summaries) = beacon_state.historical_summaries_mut() {
@@ -282,8 +283,11 @@ impl HDiff {
         self.balances_diff().apply(&mut source.balances, config)?;
         self.inactivity_scores_diff()
             .apply(&mut source.inactivity_scores, config)?;
-        self.validators_diff()
-            .apply(&mut source.validators, config)?;
+
+        let mut validators_vec = source.validators.to_vec();
+        self.validators_diff().apply(&mut validators_vec, config)?;
+        source.validators = Arc::from(validators_vec);
+
         self.historical_roots().apply(&mut source.historical_roots);
         self.historical_summaries()
             .apply(&mut source.historical_summaries);
@@ -972,7 +976,7 @@ mod tests {
             state: vec![0, 1, 2, 3, 3, 2, 1, 0],
             balances: pre_balances,
             inactivity_scores: pre_inactivity_scores,
-            validators: pre_validators,
+            validators: Arc::from(pre_validators),
             historical_roots: pre_historical_roots,
             historical_summaries: pre_historical_summaries,
         };
@@ -980,7 +984,7 @@ mod tests {
             state: vec![0, 1, 3, 2, 2, 3, 1, 1],
             balances: post_balances,
             inactivity_scores: post_inactivity_scores,
-            validators: post_validators,
+            validators: Arc::from(post_validators),
             historical_roots: post_historical_roots,
             historical_summaries: post_historical_summaries,
         };
