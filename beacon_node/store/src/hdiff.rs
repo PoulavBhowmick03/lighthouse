@@ -100,7 +100,7 @@ pub struct HDiffBuffer {
     state: Vec<u8>,
     balances: Vec<u64>,
     inactivity_scores: Vec<u64>,
-    validators: Arc<[Validator]>,
+    validators: Vec<Arc<Validator>>,
     historical_roots: Vec<Hash256>,
     historical_summaries: Vec<HistoricalSummary>,
 }
@@ -183,8 +183,11 @@ impl HDiffBuffer {
             // is post altair, all its items will show up in the diff as is.
             vec![]
         };
-        let validators = std::mem::take(beacon_state.validators_mut()).to_vec();
-        let validators = Arc::from(validators);
+        let validators = std::mem::take(beacon_state.validators_mut())
+            .iter()
+            .cloned()
+            .map(Arc::new)
+            .collect::<Vec<_>>();
         let historical_roots = std::mem::take(beacon_state.historical_roots_mut()).to_vec();
         let historical_summaries =
             if let Ok(historical_summaries) = beacon_state.historical_summaries_mut() {
@@ -222,8 +225,9 @@ impl HDiffBuffer {
                 .map_err(|_| Error::InvalidBalancesLength)?;
         }
 
-        *state.validators_mut() = List::try_from_iter(self.validators.iter().cloned())
-            .map_err(|_| Error::InvalidBalancesLength)?;
+        *state.validators_mut() =
+            List::try_from_iter(self.validators.iter().map(|arc| (**arc).clone()))
+                .map_err(|_| Error::InvalidBalancesLength)?;
 
         *state.historical_roots_mut() = List::try_from_iter(self.historical_roots.iter().copied())
             .map_err(|_| Error::InvalidBalancesLength)?;
@@ -283,10 +287,8 @@ impl HDiff {
         self.balances_diff().apply(&mut source.balances, config)?;
         self.inactivity_scores_diff()
             .apply(&mut source.inactivity_scores, config)?;
-
-        let mut validators_vec = source.validators.to_vec();
-        self.validators_diff().apply(&mut validators_vec, config)?;
-        source.validators = Arc::from(validators_vec);
+        self.validators_diff()
+            .apply(&mut source.validators, config)?;
 
         self.historical_roots().apply(&mut source.historical_roots);
         self.historical_summaries()
@@ -450,8 +452,8 @@ fn uncompress_bytes(input: &[u8], config: &StoreConfig) -> Result<Vec<u8>, Error
 
 impl ValidatorsDiff {
     pub fn compute(
-        xs: &[Validator],
-        ys: &[Validator],
+        xs: &[Arc<Validator>],
+        ys: &[Arc<Validator>],
         config: &StoreConfig,
     ) -> Result<Self, Error> {
         if xs.len() > ys.len() {
@@ -461,8 +463,10 @@ impl ValidatorsDiff {
         let uncompressed_bytes = ys
             .iter()
             .enumerate()
-            .filter_map(|(i, y)| {
-                let validator_diff = if let Some(x) = xs.get(i) {
+            .filter_map(|(i, y_arc)| {
+                let y = &**y_arc;
+                let validator_diff = if let Some(x_arc) = xs.get(i) {
+                    let x = &**x_arc;
                     if y == x {
                         return None;
                     } else {
@@ -542,7 +546,7 @@ impl ValidatorsDiff {
         })
     }
 
-    pub fn apply(&self, xs: &mut Vec<Validator>, config: &StoreConfig) -> Result<(), Error> {
+    pub fn apply(&self, xs: &mut Vec<Arc<Validator>>, config: &StoreConfig) -> Result<(), Error> {
         let validator_diff_bytes = uncompress_bytes(&self.bytes, config)?;
 
         for diff_bytes in
@@ -554,7 +558,8 @@ impl ValidatorsDiff {
             } = ValidatorDiffEntry::from_ssz_bytes(diff_bytes)
                 .map_err(|_| Error::BalancesIncompleteChunk)?;
 
-            if let Some(x) = xs.get_mut(index as usize) {
+            if let Some(x_arc) = xs.get_mut(index as usize) {
+                let mut x = (**x_arc).clone();
                 // Note: a pubkey change implies index re-use. In that case over-write
                 // withdrawal_credentials and slashed inconditionally as their default values
                 // are valid values.
@@ -584,7 +589,7 @@ impl ValidatorsDiff {
                     x.withdrawable_epoch = diff.withdrawable_epoch;
                 }
             } else {
-                xs.push(diff)
+                xs.push(Arc::new(diff))
             }
         }
 
@@ -922,10 +927,11 @@ mod tests {
         let config = &StoreConfig::default();
         let xs = (0..10)
             .map(|_| rand_validator(&mut rng))
+            .map(Arc::new)
             .collect::<Vec<_>>();
         let mut ys = xs.clone();
-        ys[5] = rand_validator(&mut rng);
-        ys.push(rand_validator(&mut rng));
+        ys[5] = Arc::new(rand_validator(&mut rng));
+        ys.push(Arc::new(rand_validator(&mut rng)));
         let diff = ValidatorsDiff::compute(&xs, &ys, config).unwrap();
 
         let mut xs_out = xs.clone();
@@ -963,7 +969,10 @@ mod tests {
         let pre_inactivity_scores = vec![1, 1, 1];
         let post_inactivity_scores = vec![0, 0, 0, 1];
 
-        let pre_validators = (0..3).map(|_| rand_validator(&mut rng)).collect::<Vec<_>>();
+        let pre_validators = (0..3)
+            .map(|_| rand_validator(&mut rng))
+            .map(Arc::new)
+            .collect::<Vec<_>>();
         let post_validators = pre_validators.clone();
 
         let pre_historical_roots = vec![Hash256::repeat_byte(0xff)];
@@ -976,7 +985,7 @@ mod tests {
             state: vec![0, 1, 2, 3, 3, 2, 1, 0],
             balances: pre_balances,
             inactivity_scores: pre_inactivity_scores,
-            validators: Arc::from(pre_validators),
+            validators: pre_validators,
             historical_roots: pre_historical_roots,
             historical_summaries: pre_historical_summaries,
         };
@@ -984,7 +993,7 @@ mod tests {
             state: vec![0, 1, 3, 2, 2, 3, 1, 1],
             balances: post_balances,
             inactivity_scores: post_inactivity_scores,
-            validators: Arc::from(post_validators),
+            validators: post_validators,
             historical_roots: post_historical_roots,
             historical_summaries: post_historical_summaries,
         };
