@@ -654,6 +654,10 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
 
     /// Persists the custody information to disk.
     pub fn persist_custody_context(&self) -> Result<(), Error> {
+        if !self.spec.is_peer_das_scheduled() {
+            return Ok(());
+        }
+
         let custody_context: CustodyContextSsz = self
             .data_availability_checker
             .custody_context()
@@ -7081,7 +7085,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         &self,
         block_root: Hash256,
         block_data: AvailableBlockData<T::EthSpec>,
-    ) -> Result<Option<StoreOp<T::EthSpec>>, String> {
+    ) -> Result<Option<StoreOp<'_, T::EthSpec>>, String> {
         match block_data {
             AvailableBlockData::NoData => Ok(None),
             AvailableBlockData::Blobs(blobs) => {
