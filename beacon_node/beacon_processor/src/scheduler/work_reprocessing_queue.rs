@@ -29,6 +29,7 @@ use std::time::Duration;
 use strum::AsRefStr;
 use task_executor::TaskExecutor;
 use tokio::sync::mpsc::{self, Receiver, Sender};
+use tokio::time::Instant;
 use tokio_util::time::delay_queue::{DelayQueue, Key as DelayKey};
 use tracing::{debug, error, trace, warn};
 use types::{EthSpec, Hash256, Slot};
@@ -58,6 +59,9 @@ pub const QUEUED_SAMPLING_REQUESTS_DELAY: Duration = Duration::from_secs(12);
 /// For how long to queue delayed column reconstruction.
 pub const QUEUED_RECONSTRUCTION_DELAY: Duration = Duration::from_millis(150);
 
+/// The maximum delay for a column reconstruction to be processed.
+pub const MAX_RECONSTRUCTION_DELAY: Duration = Duration::from_secs(1);
+
 /// Set an arbitrary upper-bound on the number of queued blocks to avoid DoS attacks. The fact that
 /// we signature-verify blocks before putting them in the queue *should* protect against this, but
 /// it's nice to have extra protection.
@@ -85,6 +89,14 @@ pub const BACKFILL_SCHEDULE_IN_SLOT: [(u32, u32); 3] = [
     // Four fifths: 9.6s on mainnet, 4s on Gnosis.
     (4, 5),
 ];
+
+/// Column reconstruction bound
+pub struct ReconstructionBound {
+    /// The first time this reconstruction was requested.
+    pub first: Instant,
+    /// The delay key
+    pub key: DelayKey,
+}
 
 /// Messages that the scheduler can receive.
 #[derive(AsRefStr)]
@@ -269,7 +281,7 @@ struct ReprocessQueue<S> {
     /// Sampling requests per block root.
     awaiting_sampling_requests_per_block_root: HashMap<Hash256, Vec<QueuedSamplingRequestId>>,
     /// Column reconstruction per block root.
-    queued_column_reconstructions: HashMap<Hash256, DelayKey>,
+    queued_column_reconstructions: HashMap<Hash256, ReconstructionBound>,
     /// Queued backfill batches
     queued_backfill_batches: Vec<QueuedBackfillBatch>,
 
@@ -847,17 +859,24 @@ impl<S: SlotClock> ReprocessQueue<S> {
                 }
             }
             InboundEvent::Msg(DelayColumnReconstruction(request)) => {
+                let current: Instant = Instant::now();
                 match self.queued_column_reconstructions.entry(request.block_root) {
-                    Entry::Occupied(key) => {
+                    Entry::Occupied(mut key) => {
+                        let bound = key.get_mut();
                         // Push back the reattempted reconstruction
-                        self.column_reconstructions_delay_queue
-                            .reset(key.get(), QUEUED_RECONSTRUCTION_DELAY)
+                        if current.duration_since(bound.first) < MAX_RECONSTRUCTION_DELAY {
+                            self.column_reconstructions_delay_queue
+                                .reset(&bound.key, QUEUED_RECONSTRUCTION_DELAY)
+                        }
                     }
                     Entry::Vacant(vacant) => {
                         let delay_key = self
                             .column_reconstructions_delay_queue
                             .insert(request, QUEUED_RECONSTRUCTION_DELAY);
-                        vacant.insert(delay_key);
+                        vacant.insert(ReconstructionBound {
+                            first: current,
+                            key: delay_key,
+                        });
                     }
                 }
             }
