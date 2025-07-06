@@ -559,35 +559,36 @@ impl ValidatorsDiff {
                 .map_err(|_| Error::BalancesIncompleteChunk)?;
 
             if let Some(x_arc) = xs.get_mut(index as usize) {
-                let mut x = (**x_arc).clone();
+                let mut v = (**x_arc).clone();
                 // Note: a pubkey change implies index re-use. In that case over-write
                 // withdrawal_credentials and slashed inconditionally as their default values
                 // are valid values.
                 let pubkey_changed = diff.pubkey != *EMPTY_PUBKEY;
                 if pubkey_changed {
-                    x.pubkey = diff.pubkey;
+                    v.pubkey = diff.pubkey;
                 }
                 if pubkey_changed || diff.withdrawal_credentials != Hash256::ZERO {
-                    x.withdrawal_credentials = diff.withdrawal_credentials;
+                    v.withdrawal_credentials = diff.withdrawal_credentials;
                 }
                 if diff.effective_balance != 0 {
-                    x.effective_balance = x.effective_balance.wrapping_add(diff.effective_balance);
+                    v.effective_balance = v.effective_balance.wrapping_add(diff.effective_balance);
                 }
                 if pubkey_changed || diff.slashed {
-                    x.slashed = diff.slashed;
+                    v.slashed = diff.slashed;
                 }
                 if diff.activation_eligibility_epoch != Epoch::new(0) {
-                    x.activation_eligibility_epoch = diff.activation_eligibility_epoch;
+                    v.activation_eligibility_epoch = diff.activation_eligibility_epoch;
                 }
                 if diff.activation_epoch != Epoch::new(0) {
-                    x.activation_epoch = diff.activation_epoch;
+                    v.activation_epoch = diff.activation_epoch;
                 }
                 if diff.exit_epoch != Epoch::new(0) {
-                    x.exit_epoch = diff.exit_epoch;
+                    v.exit_epoch = diff.exit_epoch;
                 }
                 if diff.withdrawable_epoch != Epoch::new(0) {
-                    x.withdrawable_epoch = diff.withdrawable_epoch;
+                    v.withdrawable_epoch = diff.withdrawable_epoch;
                 }
+                *x_arc = Arc::new(v);
             } else {
                 xs.push(Arc::new(diff))
             }
@@ -933,7 +934,6 @@ mod tests {
         ys[5] = Arc::new(rand_validator(&mut rng));
         ys.push(Arc::new(rand_validator(&mut rng)));
         let diff = ValidatorsDiff::compute(&xs, &ys, config).unwrap();
-
         let mut xs_out = xs.clone();
         diff.apply(&mut xs_out, config).unwrap();
         assert_eq!(xs_out, ys);
