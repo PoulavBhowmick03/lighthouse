@@ -1,4 +1,5 @@
 use crate::Error;
+use crate::memsize::BeaconStateMemorySize;
 use lru::LruCache;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::num::NonZeroUsize;
@@ -40,6 +41,9 @@ pub struct StateCache<E: EthSpec> {
     max_epoch: Epoch,
     head_block_root: Hash256,
     headroom: NonZeroUsize,
+    cached_bytes: usize,
+    max_cached_bytes: usize,
+    finalized_state_bytes: usize,
 }
 
 #[derive(Debug)]
@@ -52,7 +56,7 @@ pub enum PutStateOutcome {
 
 #[allow(clippy::len_without_is_empty)]
 impl<E: EthSpec> StateCache<E> {
-    pub fn new(capacity: NonZeroUsize, headroom: NonZeroUsize) -> Self {
+    pub fn new(capacity: NonZeroUsize, headroom: NonZeroUsize, max_cached_bytes: usize) -> Self {
         StateCache {
             finalized_state: None,
             states: LruCache::new(capacity),
@@ -60,6 +64,9 @@ impl<E: EthSpec> StateCache<E> {
             max_epoch: Epoch::new(0),
             head_block_root: Hash256::ZERO,
             headroom,
+            cached_bytes: 0,
+            max_cached_bytes,
+            finalized_state_bytes: 0,
         }
     }
 
@@ -69,6 +76,10 @@ impl<E: EthSpec> StateCache<E> {
 
     pub fn capacity(&self) -> usize {
         self.states.cap().get()
+    }
+
+    pub fn cached_bytes(&self) -> usize {
+        self.cached_bytes + self.finalized_state_bytes
     }
 
     pub fn update_finalized_state(
@@ -95,12 +106,17 @@ impl<E: EthSpec> StateCache<E> {
         // Prune block map.
         let state_roots_to_prune = self.block_map.prune(state.slot());
 
-        // Delete states.
+        // Delete states and track freed bytes.
         for state_root in state_roots_to_prune {
-            self.states.pop(&state_root);
+            if let Some((_, removed)) = self.states.pop(&state_root) {
+                self.cached_bytes = self.cached_bytes.saturating_sub(removed.memory_size());
+            }
         }
 
-        // Update finalized state.
+        // Update finalized state accounting for bytes.
+        self.cached_bytes = self.cached_bytes.saturating_sub(self.finalized_state_bytes);
+        self.finalized_state_bytes = state.memory_size();
+        self.cached_bytes += self.finalized_state_bytes;
         self.finalized_state = Some(FinalizedState { state_root, state });
         Ok(())
     }
@@ -160,21 +176,28 @@ impl<E: EthSpec> StateCache<E> {
         // Update the cache's idea of the max epoch.
         self.max_epoch = std::cmp::max(state.current_epoch(), self.max_epoch);
 
-        // If the cache is full, use the custom cull routine to make room.
-        let mut deleted_states =
-            if let Some(over_capacity) = self.len().checked_sub(self.capacity()) {
-                // The `over_capacity` should always be 0, but we add it here just in case.
-                self.cull(over_capacity + self.headroom.get())
-            } else {
-                vec![]
-            };
+        let state_bytes = state.memory_size();
+
+        // If the cache is full or would exceed the byte limit, cull states.
+        let mut deleted_states = Vec::new();
+        while (self.len() > 0
+            && (self.len() >= self.capacity()
+                || self.cached_bytes + state_bytes > self.max_cached_bytes))
+        {
+            deleted_states.extend(self.cull(self.headroom.get()));
+        }
 
         // Insert the full state into the cache.
-        if let Some((deleted_state_root, _)) =
+        if let Some((deleted_state_root, removed_state)) =
             self.states.put(state_root, (state_root, state.clone()))
         {
             deleted_states.push(deleted_state_root);
+            self.cached_bytes = self
+                .cached_bytes
+                .saturating_sub(removed_state.memory_size());
         }
+
+        self.cached_bytes += state_bytes;
 
         // Record the connection from block root and slot to this state.
         let slot = state.slot();
@@ -213,14 +236,19 @@ impl<E: EthSpec> StateCache<E> {
     }
 
     pub fn delete_state(&mut self, state_root: &Hash256) {
-        self.states.pop(state_root);
+        if let Some((_, state)) = self.states.pop(state_root) {
+            self.cached_bytes = self.cached_bytes.saturating_sub(state.memory_size());
+        }
         self.block_map.delete(state_root);
     }
 
     pub fn delete_block_states(&mut self, block_root: &Hash256) {
         if let Some(slot_map) = self.block_map.delete_block_states(block_root) {
             for state_root in slot_map.slots.values() {
-                self.states.pop(state_root);
+                if let Some((_, state)) = self.states.pop(state_root) {
+                    self.cached_bytes =
+                        self.cached_bytes.saturating_sub(state.memory_size());
+                }
             }
         }
     }

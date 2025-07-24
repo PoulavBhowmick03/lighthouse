@@ -22,6 +22,7 @@ pub const DEFAULT_EPOCHS_PER_STATE_DIFF: u64 = 8;
 pub const DEFAULT_BLOCK_CACHE_SIZE: NonZeroUsize = new_non_zero_usize(64);
 pub const DEFAULT_STATE_CACHE_SIZE: NonZeroUsize = new_non_zero_usize(128);
 pub const DEFAULT_STATE_CACHE_HEADROOM: NonZeroUsize = new_non_zero_usize(1);
+pub const DEFAULT_STATE_CACHE_MAX_BYTES: usize = 512 * 1024 * 1024; // 512 MiB
 pub const DEFAULT_COMPRESSION_LEVEL: i32 = 1;
 pub const DEFAULT_HISTORIC_STATE_CACHE_SIZE: NonZeroUsize = new_non_zero_usize(1);
 pub const DEFAULT_HDIFF_BUFFER_CACHE_SIZE: NonZeroUsize = new_non_zero_usize(16);
@@ -38,6 +39,8 @@ pub struct StoreConfig {
     pub state_cache_size: NonZeroUsize,
     /// Minimum number of states to cull from the state cache upon fullness.
     pub state_cache_headroom: NonZeroUsize,
+    /// Maximum number of bytes to use for the in-memory state cache.
+    pub state_cache_max_bytes: usize,
     /// Compression level for blocks, state diffs and other compressed values.
     pub compression_level: i32,
     /// Maximum number of historic states to store in the in-memory historic state cache.
@@ -111,6 +114,7 @@ impl Default for StoreConfig {
             block_cache_size: DEFAULT_BLOCK_CACHE_SIZE,
             state_cache_size: DEFAULT_STATE_CACHE_SIZE,
             state_cache_headroom: DEFAULT_STATE_CACHE_HEADROOM,
+            state_cache_max_bytes: DEFAULT_STATE_CACHE_MAX_BYTES,
             historic_state_cache_size: DEFAULT_HISTORIC_STATE_CACHE_SIZE,
             hdiff_buffer_cache_size: DEFAULT_HDIFF_BUFFER_CACHE_SIZE,
             compression_level: DEFAULT_COMPRESSION_LEVEL,

@@ -1882,6 +1882,22 @@ fn state_cache_size_flag() {
         .run_with_zero_port()
         .with_config(|config| assert_eq!(config.store.state_cache_size, new_non_zero_usize(64)));
 }
+
+#[test]
+fn state_cache_max_bytes_default() {
+    use beacon_node::beacon_chain::store::config::DEFAULT_STATE_CACHE_MAX_BYTES;
+    CommandLineTest::new()
+        .run_with_zero_port()
+        .with_config(|config| assert_eq!(config.store.state_cache_max_bytes, DEFAULT_STATE_CACHE_MAX_BYTES));
+}
+
+#[test]
+fn state_cache_max_bytes_flag() {
+    CommandLineTest::new()
+        .flag("state-cache-max-bytes", Some("1024"))
+        .run_with_zero_port()
+        .with_config(|config| assert_eq!(config.store.state_cache_max_bytes, 1024));
+}
 #[test]
 fn state_cache_headroom_default() {
     CommandLineTest::new()

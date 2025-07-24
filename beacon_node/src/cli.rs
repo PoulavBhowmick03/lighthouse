@@ -825,6 +825,15 @@ pub fn cli_app() -> Command {
                 .action(ArgAction::Set)
                 .display_order(0)
         )
+        .arg(
+            Arg::new("state-cache-max-bytes")
+                .long("state-cache-max-bytes")
+                .value_name("BYTES")
+                .help("Maximum memory in bytes for the state cache")
+                .default_value("536870912")
+                .action(ArgAction::Set)
+                .display_order(0)
+        )
         /*
          * Execution Layer Integration
          */
