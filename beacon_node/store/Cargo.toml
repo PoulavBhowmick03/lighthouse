@@ -34,6 +34,7 @@ tracing-subscriber = { workspace = true }
 types = { workspace = true }
 xdelta3 = { workspace = true }
 zstd = { workspace = true }
+milhouse  = { git = "https://github.com/sigp/milhouse", branch = "mem-usage" }
 
 [dev-dependencies]
 beacon_chain = { workspace = true }
