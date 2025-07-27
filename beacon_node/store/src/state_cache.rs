@@ -8,7 +8,6 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::num::NonZeroUsize;
 use tracing::instrument;
 use types::{BeaconState, ChainSpec, Epoch, EthSpec, Hash256, Slot};
-
 /// Fraction of the LRU cache to leave intact during culling.
 const CULL_EXEMPT_NUMERATOR: usize = 1;
 const CULL_EXEMPT_DENOMINATOR: usize = 10;
@@ -46,6 +45,8 @@ pub struct StateCache<E: EthSpec> {
     max_epoch: Epoch,
     head_block_root: Hash256,
     headroom: NonZeroUsize,
+    cached_bytes: usize,
+    max_cached_bytes: usize,
 }
 
 /// Cache of hdiff buffers for hot states.
@@ -83,6 +84,7 @@ impl<E: EthSpec> StateCache<E> {
         state_capacity: NonZeroUsize,
         headroom: NonZeroUsize,
         hdiff_capacity: NonZeroUsize,
+        max_cached_bytes: usize,
     ) -> Self {
         StateCache {
             finalized_state: None,
@@ -92,7 +94,17 @@ impl<E: EthSpec> StateCache<E> {
             max_epoch: Epoch::new(0),
             head_block_root: Hash256::ZERO,
             headroom,
+            max_cached_bytes,
+            cached_bytes: 0,
         }
+    }
+
+    pub fn max_cached_bytes(&self) -> usize {
+        self.max_cached_bytes
+    }
+
+    pub fn cached_bytes(&self) -> usize {
+        self.cached_bytes
     }
 
     pub fn len(&self) -> usize {
