@@ -1,5 +1,6 @@
 use crate::hdiff::HDiffBuffer;
 use crate::{
+    memsize::BeaconStateMemorySize,
     Error,
     metrics::{self, HOT_METRIC},
 };
@@ -248,25 +249,31 @@ impl<E: EthSpec> StateCache<E> {
         // Update the cache's idea of the max epoch.
         self.max_epoch = std::cmp::max(state.current_epoch(), self.max_epoch);
 
-        // If the cache is full, use the custom cull routine to make room.
-        let mut deleted_states =
-            if let Some(over_capacity) = self.len().checked_sub(self.capacity()) {
-                // The `over_capacity` should always be 0, but we add it here just in case.
-                self.cull(over_capacity + self.headroom.get())
-            } else {
-                vec![]
-            };
+        let state_size = state.memory_size();
+
+        // If the cache is full or would exceed the byte limit, cull states.
+        let mut deleted_states = Vec::new();
+        while self.len() > 0
+            && (self.len() >= self.capacity()
+                || self.cached_bytes + state_size > self.max_cached_bytes)
+        {
+            deleted_states.extend(self.cull(self.headroom.get()));
+        }
 
         // Insert the full state into the cache.
-        if let Some((deleted_state_root, _)) =
+        if let Some((deleted_state_root, removed_state)) =
             self.states.put(state_root, (state_root, state.clone()))
         {
             deleted_states.push(deleted_state_root);
+            self.cached_bytes = self
+                .cached_bytes
+                .saturating_sub(removed_state.memory_size());
         }
 
         // Record the connection from block root and slot to this state.
         let slot = state.slot();
         self.block_map.insert(block_root, slot, state_root);
+        self.cached_bytes += state_size;
 
         Ok(PutStateOutcome::New(deleted_states))
     }

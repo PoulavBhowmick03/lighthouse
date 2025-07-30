@@ -1,7 +1,8 @@
 use crate::exec::{CommandLineTestExec, CompletedTest};
 use beacon_node::beacon_chain::chain_config::{
     DEFAULT_RE_ORG_CUTOFF_DENOMINATOR, DEFAULT_RE_ORG_HEAD_THRESHOLD,
-    DEFAULT_RE_ORG_MAX_EPOCHS_SINCE_FINALIZATION, DEFAULT_SYNC_TOLERANCE_EPOCHS,
+    DEFAULT_RE_ORG_MAX_EPOCHS_SINCE_FINALIZATION, DEFAULT_STATE_CACHE_MAX_BYTES,
+    DEFAULT_SYNC_TOLERANCE_EPOCHS,
     DisallowedReOrgOffsets,
 };
 use beacon_node::{
@@ -1825,6 +1826,17 @@ fn state_cache_size_flag() {
         .flag("state-cache-size", Some("64"))
         .run_with_zero_port()
         .with_config(|config| assert_eq!(config.store.state_cache_size, new_non_zero_usize(64)));
+}
+#[test]
+fn state_cache_max_bytes_default() {
+    CommandLineTest::new()
+        .run_with_zero_port()
+        .with_config(|config| {
+            assert_eq!(
+                config.store.state_cache_max_bytes,
+                DEFAULT_STATE_CACHE_MAX_BYTES
+            );
+        });
 }
 #[test]
 fn state_cache_headroom_default() {
