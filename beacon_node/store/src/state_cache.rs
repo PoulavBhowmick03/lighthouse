@@ -340,6 +340,11 @@ impl<E: EthSpec> StateCache<E> {
     }
 
     pub fn delete_state(&mut self, state_root: &Hash256) {
+        self.cached_bytes = self.cached_bytes.saturating_sub(
+            self.states
+                .peek(state_root)
+                .map_or(0, |(_, state)| state.memory_size()),
+        );
         self.states.pop(state_root);
         self.block_map.delete(state_root);
     }
@@ -347,7 +352,7 @@ impl<E: EthSpec> StateCache<E> {
     pub fn delete_block_states(&mut self, block_root: &Hash256) {
         if let Some(slot_map) = self.block_map.delete_block_states(block_root) {
             for state_root in slot_map.slots.values() {
-                self.states.pop(state_root);
+                self.delete_state(state_root);
             }
         }
     }
@@ -410,6 +415,11 @@ impl<E: EthSpec> StateCache<E> {
             .collect::<Vec<_>>();
 
         for state_root in &state_roots_to_delete {
+            self.cached_bytes = self.cached_bytes.saturating_sub(
+                self.states
+                    .peek(state_root)
+                    .map_or(0, |(_, state)| state.memory_size()),
+            );
             self.delete_state(state_root);
         }
 
