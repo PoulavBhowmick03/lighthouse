@@ -1844,7 +1844,7 @@ fn state_cache_max_bytes_default() {
         .run_with_zero_port()
         .with_config(|config| {
             assert_eq!(
-                config.store.state_cache_max_bytes,
+                config.store.max_state_cache_bytes,
                 DEFAULT_STATE_CACHE_MAX_BYTES
             );
         });
