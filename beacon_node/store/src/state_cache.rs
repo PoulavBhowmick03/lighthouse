@@ -16,7 +16,7 @@ const CULL_EXEMPT_DENOMINATOR: usize = 10;
 /// States that are less than or equal to this many epochs old *could* become finalized and will not
 /// be culled from the cache.
 const EPOCH_FINALIZATION_LIMIT: u64 = 4;
-
+const RECOMPUTE_INTERVAL: usize = 10;
 #[derive(Debug)]
 pub struct FinalizedState<E: EthSpec> {
     state_root: Hash256,
@@ -48,6 +48,7 @@ pub struct StateCache<E: EthSpec> {
     headroom: NonZeroUsize,
     cached_bytes: usize,
     max_cached_bytes: usize,
+    put_count: usize,
 }
 
 /// Cache of hdiff buffers for hot states.
@@ -97,6 +98,7 @@ impl<E: EthSpec> StateCache<E> {
             headroom,
             max_cached_bytes,
             cached_bytes: 0,
+            put_count: 0,
         }
     }
 
@@ -249,31 +251,30 @@ impl<E: EthSpec> StateCache<E> {
         // Update the cache's idea of the max epoch.
         self.max_epoch = std::cmp::max(state.current_epoch(), self.max_epoch);
 
-        let state_size = state.memory_size();
-
-        // If the cache is full or would exceed the byte limit, cull states.
-        let mut deleted_states = Vec::new();
-        while self.len() > 0
-            && (self.len() >= self.capacity()
-                || self.cached_bytes + state_size > self.max_cached_bytes)
-        {
-            deleted_states.extend(self.cull(self.headroom.get()));
-        }
+        // If the cache is full, use the custom cull routine to make room.
+        let mut deleted_states =
+            if let Some(over_capacity) = self.len().checked_sub(self.capacity()) {
+                // The `over_capacity` should always be 0, but we add it here just in case.
+                self.cull(over_capacity + self.headroom.get())
+            } else {
+                vec![]
+            };
 
         // Insert the full state into the cache.
-        if let Some((deleted_state_root, removed_state)) =
+        if let Some((deleted_state_root, _)) =
             self.states.put(state_root, (state_root, state.clone()))
         {
             deleted_states.push(deleted_state_root);
-            self.cached_bytes = self
-                .cached_bytes
-                .saturating_sub(removed_state.memory_size());
         }
-
         // Record the connection from block root and slot to this state.
         let slot = state.slot();
         self.block_map.insert(block_root, slot, state_root);
-        self.cached_bytes += state_size;
+        self.put_count += 1;
+
+        if self.put_count >= RECOMPUTE_INTERVAL {
+            self.recompute_cached_bytes();
+            self.put_count = 0;
+        }
 
         Ok(PutStateOutcome::New(deleted_states))
     }
@@ -340,11 +341,6 @@ impl<E: EthSpec> StateCache<E> {
     }
 
     pub fn delete_state(&mut self, state_root: &Hash256) {
-        self.cached_bytes = self.cached_bytes.saturating_sub(
-            self.states
-                .peek(state_root)
-                .map_or(0, |(_, state)| state.memory_size()),
-        );
         self.states.pop(state_root);
         self.block_map.delete(state_root);
     }
@@ -424,6 +420,43 @@ impl<E: EthSpec> StateCache<E> {
         }
 
         state_roots_to_delete
+    }
+
+    fn recompute_cached_bytes(&mut self) {
+        let mut total_bytes: usize = self
+            .states
+            .iter()
+            .map(|(_, (_, state))| state.memory_size())
+            .sum();
+
+        self.cached_bytes = total_bytes;
+
+        // Update the metric
+        metrics::set_gauge(
+            &metrics::STORE_BEACON_STATE_CACHE_MEMORY_SIZE,
+            total_bytes as i64,
+        );
+
+        while total_bytes > self.max_cached_bytes && self.len() > 0 {
+            // Prune a small number of states
+            let states_to_prune = std::cmp::min(5, self.len()); // Prune up to 5 states
+            self.cull(states_to_prune);
+
+            // Recompute to see actual memory reduction
+            total_bytes = self
+                .states
+                .iter()
+                .map(|(_, (_, state))| state.memory_size())
+                .sum();
+
+            self.cached_bytes = total_bytes;
+
+            // Update metric again
+            metrics::set_gauge(
+                &metrics::STORE_BEACON_STATE_CACHE_MEMORY_SIZE,
+                total_bytes as i64,
+            );
+        }
     }
 }
 
