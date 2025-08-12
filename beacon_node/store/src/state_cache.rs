@@ -1,12 +1,14 @@
 use crate::hdiff::HDiffBuffer;
 use crate::{
-    memsize::BeaconStateMemorySize,
+    memsize::{BeaconStateWrapper, BeaconStateMemorySize},
     Error,
     metrics::{self, HOT_METRIC},
 };
 use lru::LruCache;
+use milhouse::mem::MemoryTracker;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::num::NonZeroUsize;
+use std::time::{Duration, Instant};
 use tracing::instrument;
 use types::{BeaconState, ChainSpec, Epoch, EthSpec, Hash256, Slot};
 /// Fraction of the LRU cache to leave intact during culling.
@@ -204,10 +206,10 @@ impl<E: EthSpec> StateCache<E> {
         // Do not attempt to rebase states prior to the finalized state. This method might be called
         // with states on the hdiff grid prior to finalization, as part of the reconstruction of
         // some later unfinalized state.
-        if let Some(finalized_state) = &self.finalized_state
-            && state.slot() >= finalized_state.state.slot()
-        {
-            state.rebase_on(&finalized_state.state, spec)?;
+        if let Some(finalized_state) = &self.finalized_state {
+            if state.slot() >= finalized_state.state.slot() {
+                state.rebase_on(&finalized_state.state, spec)?;
+            }
         }
 
         Ok(())
@@ -422,39 +424,61 @@ impl<E: EthSpec> StateCache<E> {
         state_roots_to_delete
     }
 
-    fn recompute_cached_bytes(&mut self) {
-        let mut total_bytes: usize = self
-            .states
-            .iter()
-            .map(|(_, (_, state))| state.memory_size())
-            .sum();
+    fn measure_cached_memory_size(&self) -> (usize, Duration) {
+        let mut tracker = MemoryTracker::default();
+        let mut total_bytes: usize = 0;
+        let timer = Instant::now();
+        // Use MemoryTracker on the states
+        // if let Some(finalized_state) = &self.finalized_state {
+        //     total_bytes += tracker
+        //         .track_item(&BeaconStateWrapper(&finalized_state.state))
+        //         .differential_size;
+        // }
+        for (_, (_, state)) in &self.states {
+            total_bytes += tracker
+                .track_item(&BeaconStateWrapper(&state))
+                .differential_size;
+        }
 
+        let elapsed_time = timer.elapsed();
+        (total_bytes, elapsed_time)
+    }
+
+    fn recompute_cached_bytes(&mut self) {
+        let (mut total_bytes, _) = self.measure_cached_memory_size();
         self.cached_bytes = total_bytes;
 
-        // Update the metric
+        // Update metric again
         metrics::set_gauge(
             &metrics::STORE_BEACON_STATE_CACHE_MEMORY_SIZE,
             total_bytes as i64,
         );
 
-        while total_bytes > self.max_cached_bytes && self.len() > 0 {
-            // Prune a small number of states
-            let states_to_prune = std::cmp::min(5, self.len()); // Prune up to 5 states
-            self.cull(states_to_prune);
+        let batch = self.headroom.get().max(5).min(64); // tune batch size
 
-            // Recompute to see actual memory reduction
-            total_bytes = self
-                .states
-                .iter()
-                .map(|(_, (_, state))| state.memory_size())
-                .sum();
+        while total_bytes > self.max_cached_bytes {
+            // Cull the cache until we are under the max_cached_bytes limit.
+            let deleted_states = self.cull(batch);
+            if deleted_states.is_empty() {
+                // No more states to delete, break out of the loop.
+                break;
+            }
 
+            // Recalculate the memory size after culling.
+            let (new_total_bytes, elapsed_time) = self.measure_cached_memory_size();
+            total_bytes = new_total_bytes;
             self.cached_bytes = total_bytes;
 
-            // Update metric again
+            // Update metric with the new size
             metrics::set_gauge(
                 &metrics::STORE_BEACON_STATE_CACHE_MEMORY_SIZE,
                 total_bytes as i64,
+            );
+
+            // Log the time taken for recalculation
+            metrics::observe(
+                &metrics::BEACON_STATE_MEMORY_SIZE_CALCULATION_TIME,
+                elapsed_time.as_secs_f64(),
             );
         }
     }
