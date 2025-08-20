@@ -2,8 +2,7 @@ use crate::exec::{CommandLineTestExec, CompletedTest};
 use beacon_node::beacon_chain::chain_config::{
     DEFAULT_RE_ORG_CUTOFF_DENOMINATOR, DEFAULT_RE_ORG_HEAD_THRESHOLD,
     DEFAULT_RE_ORG_MAX_EPOCHS_SINCE_FINALIZATION, DEFAULT_STATE_CACHE_MAX_BYTES,
-    DEFAULT_SYNC_TOLERANCE_EPOCHS,
-    DisallowedReOrgOffsets,
+    DEFAULT_SYNC_TOLERANCE_EPOCHS, DisallowedReOrgOffsets,
 };
 use beacon_node::{
     ClientConfig as Config, beacon_chain::graffiti_calculator::GraffitiOrigin,
