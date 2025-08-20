@@ -1,7 +1,7 @@
 use crate::hdiff::HDiffBuffer;
 use crate::{
-    memsize::{BeaconStateWrapper, BeaconStateMemorySize},
     Error,
+    memsize::{BeaconStateMemorySize, BeaconStateWrapper},
     metrics::{self, HOT_METRIC},
 };
 use lru::LruCache;
