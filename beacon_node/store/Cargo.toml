@@ -20,6 +20,7 @@ leveldb = { version = "0.8.6", optional = true, default-features = false }
 logging = { workspace = true }
 lru = { workspace = true }
 metrics = { workspace = true }
+milhouse = { workspace = true }
 parking_lot = { workspace = true }
 redb = { version = "2.1.3", optional = true }
 safe_arith = { workspace = true }
@@ -34,7 +35,6 @@ tracing-subscriber = { workspace = true }
 types = { workspace = true }
 xdelta3 = { workspace = true }
 zstd = { workspace = true }
-milhouse  = { git = "https://github.com/sigp/milhouse", branch = "mem-usage" }
 
 [dev-dependencies]
 beacon_chain = { workspace = true }
