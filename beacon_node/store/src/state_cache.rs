@@ -206,10 +206,10 @@ impl<E: EthSpec> StateCache<E> {
         // Do not attempt to rebase states prior to the finalized state. This method might be called
         // with states on the hdiff grid prior to finalization, as part of the reconstruction of
         // some later unfinalized state.
-        if let Some(finalized_state) = &self.finalized_state {
-            if state.slot() >= finalized_state.state.slot() {
-                state.rebase_on(&finalized_state.state, spec)?;
-            }
+        if let Some(finalized_state) = &self.finalized_state
+            && state.slot() >= finalized_state.state.slot()
+        {
+            state.rebase_on(&finalized_state.state, spec)?;
         }
 
         Ok(())
@@ -436,7 +436,7 @@ impl<E: EthSpec> StateCache<E> {
         // }
         for (_, (_, state)) in &self.states {
             total_bytes += tracker
-                .track_item(&BeaconStateWrapper(&state))
+                .track_item(&BeaconStateWrapper(state))
                 .differential_size;
         }
 
@@ -454,7 +454,7 @@ impl<E: EthSpec> StateCache<E> {
             total_bytes as i64,
         );
 
-        let batch = self.headroom.get().max(5).min(64); // tune batch size
+        let batch = self.headroom.get().clamp(5, 64); // tune batch size
 
         while total_bytes > self.max_cached_bytes {
             // Cull the cache until we are under the max_cached_bytes limit.
