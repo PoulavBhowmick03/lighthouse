@@ -2,7 +2,7 @@ use crate::utils::is_ascii_control;
 
 use chrono::prelude::*;
 use serde_json::{Map, Value};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::io::Write;
 use tracing::Subscriber;
 use tracing::field::Field;
@@ -81,25 +81,14 @@ where
         event.record(&mut visitor);
 
         let mut span_data = HashMap::new();
-        if let Some(scope) = ctx.event_scope(event) {
-            for span in scope.from_root() {
+        if let Some(mut scope) = ctx.event_scope(event) {
+            if let Some(span) = scope.next() {
                 if let Some(data) = span.extensions().get::<SpanData>() {
                     for (k, v) in data.fields.clone() {
                         span_data.insert(k, v);
                     }
                 }
             }
-        }
-
-        // Remove span fields whose base names are already present on the event.
-        if !visitor.fields.is_empty() && !span_data.is_empty() {
-            let event_field_names: HashSet<&str> =
-                visitor.fields.iter().map(|(k, _)| k.as_str()).collect();
-
-            span_data.retain(|key, _| {
-                let base = key.rsplit('.').next().unwrap_or(key.as_str());
-                !event_field_names.contains(base)
-            });
         }
 
         // Remove ascii control codes from message.
