@@ -586,6 +586,7 @@ async fn attestations_with_increasing_slots() {
             head_state_root,
             head.beacon_block_root,
             head.beacon_block.slot(),
+            0,
         ));
 
         harness.advance_slot();

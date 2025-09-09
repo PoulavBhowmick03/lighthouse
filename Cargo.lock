@@ -913,6 +913,7 @@ dependencies = [
  "tree_hash",
  "tree_hash_derive",
  "types",
+ "validator_client",
  "zstd 0.13.3",
 ]
 

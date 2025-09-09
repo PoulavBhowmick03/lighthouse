@@ -749,14 +749,14 @@ impl<T: SlotClock + 'static, E: EthSpec> ValidatorStore for LighthouseValidatorS
     async fn sign_attestation(
         &self,
         validator_pubkey: PublicKeyBytes,
-        validator_committee_position: usize,
-        attestation: &mut Attestation<E>,
+        _validator_committee_position: usize,
+        single_attestation: &mut SingleAttestation,
         current_epoch: Epoch,
     ) -> Result<(), Error> {
         // Make sure the target epoch is not higher than the current epoch to avoid potential attacks.
-        if attestation.data().target.epoch > current_epoch {
+        if single_attestation.data.target.epoch > current_epoch {
             return Err(Error::GreaterThanCurrentEpoch {
-                epoch: attestation.data().target.epoch,
+                epoch: single_attestation.data.target.epoch,
                 current_epoch,
             });
         }
@@ -765,7 +765,7 @@ impl<T: SlotClock + 'static, E: EthSpec> ValidatorStore for LighthouseValidatorS
         let signing_method = self.doppelganger_checked_signing_method(validator_pubkey)?;
 
         // Checking for slashing conditions.
-        let signing_epoch = attestation.data().target.epoch;
+        let signing_epoch = single_attestation.data.target.epoch;
         let signing_context = self.signing_context(Domain::BeaconAttester, signing_epoch);
         let domain_hash = signing_context.domain_hash(&self.spec);
         let slashing_status = if signing_method
@@ -773,7 +773,7 @@ impl<T: SlotClock + 'static, E: EthSpec> ValidatorStore for LighthouseValidatorS
         {
             self.slashing_protection.check_and_insert_attestation(
                 &validator_pubkey,
-                attestation.data(),
+                &single_attestation.data,
                 domain_hash,
             )
         } else {
@@ -785,16 +785,13 @@ impl<T: SlotClock + 'static, E: EthSpec> ValidatorStore for LighthouseValidatorS
             Ok(Safe::Valid) => {
                 let signature = signing_method
                     .get_signature::<E, BlindedPayload<E>>(
-                        SignableMessage::AttestationData(attestation.data()),
+                        SignableMessage::AttestationData(&single_attestation.data),
                         signing_context,
                         &self.spec,
                         &self.task_executor,
                     )
                     .await?;
-                attestation
-                    .add_signature(&signature, validator_committee_position)
-                    .map_err(Error::UnableToSignAttestation)?;
-
+                single_attestation.add_signature(&signature);
                 validator_metrics::inc_counter_vec(
                     &validator_metrics::SIGNED_ATTESTATIONS_TOTAL,
                     &[validator_metrics::SUCCESS],
@@ -824,7 +821,7 @@ impl<T: SlotClock + 'static, E: EthSpec> ValidatorStore for LighthouseValidatorS
             }
             Err(e) => {
                 crit!(
-                    attestation = format!("{:?}", attestation.data()),
+                    attestation = format!("{:?}", single_attestation.data),
                     error = format!("{:?}", e),
                     "Not signing slashable attestation"
                 );

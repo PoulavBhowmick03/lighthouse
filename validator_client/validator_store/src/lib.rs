@@ -108,7 +108,7 @@ pub trait ValidatorStore: Send + Sync {
         &self,
         validator_pubkey: PublicKeyBytes,
         validator_committee_position: usize,
-        attestation: &mut Attestation<Self::E>,
+        attestation: &mut SingleAttestation,
         current_epoch: Epoch,
     ) -> impl Future<Output = Result<(), Error<Self::Error>>> + Send;
 

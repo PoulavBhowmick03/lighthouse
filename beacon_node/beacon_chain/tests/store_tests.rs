@@ -507,6 +507,7 @@ async fn epoch_boundary_state_attestation_processing() {
             head.beacon_state_root(),
             head.beacon_block_root,
             head.beacon_block.slot(),
+            0,
         ));
 
         harness.advance_slot();

@@ -66,6 +66,7 @@ tracing = { workspace = true }
 tree_hash = { workspace = true }
 tree_hash_derive = { workspace = true }
 types = { workspace = true }
+validator_client = { workspace = true }
 zstd = { workspace = true }
 
 [dev-dependencies]

@@ -216,6 +216,7 @@ impl ApiTester {
                     head_state_root,
                     head.beacon_block_root,
                     harness.chain.slot().unwrap(),
+                    0,
                 )
                 .into_iter()
                 .flat_map(|vec| vec.into_iter().map(|(attestation, _subnet_id)| attestation))

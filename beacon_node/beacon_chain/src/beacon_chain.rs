@@ -1859,7 +1859,8 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         &self,
         request_slot: Slot,
         request_index: CommitteeIndex,
-    ) -> Result<Attestation<T::EthSpec>, Error> {
+        attester_index: u64,
+    ) -> Result<SingleAttestation, Error> {
         let _total_timer = metrics::start_timer(&metrics::ATTESTATION_PRODUCTION_SECONDS);
 
         // The early attester cache will return `Some(attestation)` in the scenario where there is a
@@ -1870,10 +1871,12 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         // head/target votes.
         //
         // The early attester cache should never contain an optimistically imported block.
-        match self
-            .early_attester_cache
-            .try_attest(request_slot, request_index, &self.spec)
-        {
+        match self.early_attester_cache.try_attest(
+            request_slot,
+            request_index,
+            attester_index,
+            &self.spec,
+        ) {
             // The cache matched this request, return the value.
             Ok(Some(attestation)) => return Ok(attestation),
             // The cache did not match this request, proceed with the rest of this function.
@@ -2012,7 +2015,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
 
         let cache_timer =
             metrics::start_timer(&metrics::ATTESTATION_PRODUCTION_CACHE_INTERACTION_SECONDS);
-        let (justified_checkpoint, committee_len) =
+        let (justified_checkpoint, _committee_len) =
             if let Some((justified_checkpoint, committee_len)) = current_epoch_attesting_info {
                 // The head state is in the same epoch as the attestation, so there is no more
                 // required information.
@@ -2048,15 +2051,14 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
             };
         drop(cache_timer);
 
-        Ok(Attestation::<T::EthSpec>::empty_for_signing(
+        Ok(SingleAttestation::empty_for_signing(
             request_index,
-            committee_len,
+            attester_index,
             request_slot,
             beacon_block_root,
             justified_checkpoint,
             target,
-            &self.spec,
-        )?)
+        ))
     }
 
     /// Performs the same validation as `Self::verify_unaggregated_attestation_for_gossip`, but for

@@ -44,6 +44,7 @@ mod tests {
     use tempfile::{TempDir, tempdir};
     use tokio::sync::OnceCell;
     use tokio::time::sleep;
+    use types::SingleAttestation;
     use types::{attestation::AttestationBase, *};
     use url::Url;
     use validator_store::{
@@ -76,6 +77,7 @@ mod tests {
 
     impl SignedObject for Signature {}
     impl SignedObject for Attestation<E> {}
+    impl SignedObject for SingleAttestation {}
     impl SignedObject for SignedBeaconBlock<E> {}
     impl SignedObject for SignedBlock<E> {}
     impl SignedObject for SignedAggregateAndProof<E> {}
@@ -564,6 +566,27 @@ mod tests {
         })
     }
 
+    fn get_single_attestation() -> SingleAttestation {
+        SingleAttestation {
+            committee_index: 0,
+            attester_index: 0,
+            data: AttestationData {
+                slot: <_>::default(),
+                index: 0,
+                beacon_block_root: <_>::default(),
+                source: Checkpoint {
+                    epoch: <_>::default(),
+                    root: <_>::default(),
+                },
+                target: Checkpoint {
+                    epoch: <_>::default(),
+                    root: <_>::default(),
+                },
+            },
+            signature: AggregateSignature::empty(),
+        }
+    }
+
     fn get_validator_registration(pubkey: PublicKeyBytes) -> ValidatorRegistrationData {
         let fee_recipient = Address::repeat_byte(42);
         ValidatorRegistrationData {
@@ -607,7 +630,7 @@ mod tests {
         })
         .await
         .assert_signatures_match("attestation", |pubkey, validator_store| async move {
-            let mut attestation = get_attestation();
+            let mut attestation = get_single_attestation();
             validator_store
                 .sign_attestation(pubkey, 0, &mut attestation, Epoch::new(0))
                 .await
@@ -784,29 +807,29 @@ mod tests {
         let slashable_message_should_sign = !slashing_protection_config.local;
 
         let first_attestation = || {
-            let mut attestation = get_attestation();
-            attestation.data_mut().source.epoch = Epoch::new(1);
-            attestation.data_mut().target.epoch = Epoch::new(4);
+            let mut attestation = get_single_attestation();
+            attestation.data.source.epoch = Epoch::new(1);
+            attestation.data.target.epoch = Epoch::new(4);
             attestation
         };
 
         let double_vote_attestation = || {
             let mut attestation = first_attestation();
-            attestation.data_mut().beacon_block_root = Hash256::from_low_u64_be(1);
+            attestation.data.beacon_block_root = Hash256::from_low_u64_be(1);
             attestation
         };
 
         let surrounding_attestation = || {
             let mut attestation = first_attestation();
-            attestation.data_mut().source.epoch = Epoch::new(0);
-            attestation.data_mut().target.epoch = Epoch::new(5);
+            attestation.data.source.epoch = Epoch::new(0);
+            attestation.data.target.epoch = Epoch::new(5);
             attestation
         };
 
         let surrounded_attestation = || {
             let mut attestation = first_attestation();
-            attestation.data_mut().source.epoch = Epoch::new(2);
-            attestation.data_mut().target.epoch = Epoch::new(3);
+            attestation.data.source.epoch = Epoch::new(2);
+            attestation.data.target.epoch = Epoch::new(3);
             attestation
         };
 

@@ -3427,9 +3427,16 @@ pub fn serve<T: BeaconChainTypes>(
                         )));
                     }
 
+                    // An attester_index is required to build a SingleAttestation, but
+                    let attester_index: u64 = 0;
+
                     chain
-                        .produce_unaggregated_attestation(query.slot, query.committee_index)
-                        .map(|attestation| attestation.data().clone())
+                        .produce_unaggregated_attestation(
+                            query.slot,
+                            query.committee_index,
+                            attester_index,
+                        )
+                        .map(|attestation| attestation.data.clone())
                         .map(api_types::GenericResponse::from)
                         .map_err(warp_utils::reject::unhandled_error)
                 })

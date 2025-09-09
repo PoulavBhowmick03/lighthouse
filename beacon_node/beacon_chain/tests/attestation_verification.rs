@@ -1145,6 +1145,7 @@ async fn attestation_that_skips_epochs() {
             state_root,
             earlier_block.canonical_root(),
             current_slot,
+            0,
         )
         .first()
         .expect("should have at least one committee")
@@ -1259,6 +1260,7 @@ async fn attestation_validator_receive_proposer_reward_and_withdrawals() {
             state_root,
             earlier_block.canonical_root(),
             current_slot,
+            0,
         )
         .first()
         .expect("should have at least one committee")
@@ -1328,6 +1330,7 @@ async fn attestation_to_finalized_block() {
             state_root,
             earlier_block_root,
             current_slot,
+            0,
         )
         .first()
         .expect("should have at least one committee")

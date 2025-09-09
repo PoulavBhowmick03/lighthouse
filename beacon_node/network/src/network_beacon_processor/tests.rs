@@ -153,6 +153,7 @@ impl TestRig {
                 head_state_root,
                 head.beacon_block_root,
                 harness.chain.slot().unwrap(),
+                0,
             )
             .into_iter()
             .flatten()
@@ -170,6 +171,7 @@ impl TestRig {
                 next_block_tuple.0.state_root(),
                 next_block_tuple.0.canonical_root(),
                 next_block_tuple.0.slot(),
+                0,
             )
             .into_iter()
             .flatten()

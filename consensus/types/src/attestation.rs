@@ -95,50 +95,6 @@ impl<E: EthSpec> Hash for Attestation<E> {
 }
 
 impl<E: EthSpec> Attestation<E> {
-    /// Produces an attestation with empty signature.
-    pub fn empty_for_signing(
-        committee_index: u64,
-        committee_length: usize,
-        slot: Slot,
-        beacon_block_root: Hash256,
-        source: Checkpoint,
-        target: Checkpoint,
-        spec: &ChainSpec,
-    ) -> Result<Self, Error> {
-        if spec.fork_name_at_slot::<E>(slot).electra_enabled() {
-            let mut committee_bits: BitVector<E::MaxCommitteesPerSlot> = BitVector::default();
-            committee_bits
-                .set(committee_index as usize, true)
-                .map_err(|_| Error::InvalidCommitteeIndex)?;
-            Ok(Attestation::Electra(AttestationElectra {
-                aggregation_bits: BitList::with_capacity(committee_length)
-                    .map_err(|_| Error::InvalidCommitteeLength)?,
-                data: AttestationData {
-                    slot,
-                    index: 0u64,
-                    beacon_block_root,
-                    source,
-                    target,
-                },
-                committee_bits,
-                signature: AggregateSignature::infinity(),
-            }))
-        } else {
-            Ok(Attestation::Base(AttestationBase {
-                aggregation_bits: BitList::with_capacity(committee_length)
-                    .map_err(|_| Error::InvalidCommitteeLength)?,
-                data: AttestationData {
-                    slot,
-                    index: committee_index,
-                    beacon_block_root,
-                    source,
-                    target,
-                },
-                signature: AggregateSignature::infinity(),
-            }))
-        }
-    }
-
     /// Aggregate another Attestation into this one.
     ///
     /// The aggregation bitfields must be disjoint, and the data must be the same.
@@ -622,6 +578,14 @@ pub struct SingleAttestation {
 }
 
 impl SingleAttestation {
+    /// Sets the signature for this `SingleAttestation` from an individual `Signature`.
+    ///
+    /// This replaces any existing aggregate signature with an aggregate containing only
+    /// the provided `signature`.
+    pub fn add_signature(&mut self, signature: &Signature) {
+        self.signature = AggregateSignature::from(signature);
+    }
+
     pub fn to_indexed<E: EthSpec>(&self, fork_name: ForkName) -> IndexedAttestation<E> {
         if fork_name.electra_enabled() {
             IndexedAttestation::Electra(IndexedAttestationElectra {
@@ -636,6 +600,25 @@ impl SingleAttestation {
                 signature: self.signature.clone(),
             })
         }
+    }
+
+    pub fn sign(
+        &mut self,
+        secret_key: &SecretKey,
+        fork: &Fork,
+        genesis_validators_root: Hash256,
+        spec: &ChainSpec,
+    ) -> Result<(), Error> {
+        let domain = spec.get_domain(
+            self.data.target.epoch,
+            Domain::BeaconAttester,
+            fork,
+            genesis_validators_root,
+        );
+        let message = self.data.signing_root(domain);
+
+        self.add_signature(&secret_key.sign(message));
+        Ok(())
     }
 
     pub fn empty_for_signing(

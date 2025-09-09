@@ -1132,6 +1132,7 @@ where
         state_root: Hash256,
         aggregation_bit_index: usize,
         validator_index: usize,
+        attester_index: u64,
     ) -> Result<SingleAttestation, BeaconChainError> {
         let epoch = slot.epoch(E::slots_per_epoch());
 
@@ -1148,7 +1149,8 @@ where
             mut_state.build_committee_cache(RelativeEpoch::Current, &self.spec)?;
         }
 
-        let committee_len = state.get_beacon_committee(slot, index)?.committee.len();
+        // Determine the committee for this slot/index so we can map the
+        // aggregation bit index to a concrete validator (attester_index).
 
         let target_slot = epoch.start_slot(E::slots_per_epoch());
         let target_root = if state.slot() <= target_slot {
@@ -1157,9 +1159,11 @@ where
             *state.get_block_root(target_slot)?
         };
 
-        let attestation: Attestation<E> = Attestation::empty_for_signing(
+        // Build a SingleAttestation and set the attester_index based on the
+        // desired aggregation_bit_index within the committee.
+        let mut single_attestation: SingleAttestation = SingleAttestation::empty_for_signing(
             index,
-            committee_len,
+            attester_index,
             slot,
             beacon_block_root,
             state.current_justified_checkpoint(),
@@ -1167,50 +1171,15 @@ where
                 epoch,
                 root: target_root,
             },
-            &self.spec,
-        )?;
-
-        let attestation = match attestation {
-            Attestation::Electra(mut attn) => {
-                attn.aggregation_bits
-                    .set(aggregation_bit_index, true)
-                    .unwrap();
-                Attestation::Electra(attn)
-            }
-            Attestation::Base(mut attn) => {
-                attn.aggregation_bits
-                    .set(aggregation_bit_index, true)
-                    .unwrap();
-                Attestation::Base(attn)
-            }
-        };
-
-        let aggregation_bits = attestation.get_aggregation_bits();
-
-        if aggregation_bits.len() != 1 {
-            panic!("Must be an unaggregated attestation")
-        }
-
-        let aggregation_bit = *aggregation_bits.first().unwrap();
+        );
 
         let committee = state.get_beacon_committee(slot, index).unwrap();
+        let mapped_attester_index = committee.committee[aggregation_bit_index] as u64;
+        single_attestation.attester_index = mapped_attester_index;
 
-        let attester_index = committee
-            .committee
-            .iter()
-            .enumerate()
-            .find_map(|(i, &index)| {
-                if aggregation_bit as usize == i {
-                    return Some(index);
-                }
-                None
-            })
-            .unwrap();
-
-        let single_attestation =
-            attestation.to_single_attestation_with_attester_index(attester_index as u64)?;
-
-        let fork_name = self.spec.fork_name_at_slot::<E>(attestation.data().slot);
+        let fork_name = self
+            .spec
+            .fork_name_at_slot::<E>(single_attestation.data.slot);
         let attestation: Attestation<E> =
             single_attestation_to_attestation(&single_attestation, committee.committee, fork_name)
                 .unwrap();
@@ -1238,10 +1207,11 @@ where
         &self,
         slot: Slot,
         index: CommitteeIndex,
+        attester_index: u64,
         beacon_block_root: Hash256,
         mut state: Cow<BeaconState<E>>,
         state_root: Hash256,
-    ) -> Result<Attestation<E>, BeaconChainError> {
+    ) -> Result<SingleAttestation, BeaconChainError> {
         let epoch = slot.epoch(E::slots_per_epoch());
 
         if state.slot() > slot {
@@ -1257,8 +1227,6 @@ where
             mut_state.build_committee_cache(RelativeEpoch::Current, &self.spec)?;
         }
 
-        let committee_len = state.get_beacon_committee(slot, index)?.committee.len();
-
         let target_slot = epoch.start_slot(E::slots_per_epoch());
         let target_root = if state.slot() <= target_slot {
             beacon_block_root
@@ -1266,9 +1234,9 @@ where
             *state.get_block_root(target_slot)?
         };
 
-        Ok(Attestation::empty_for_signing(
+        Ok(SingleAttestation::empty_for_signing(
             index,
-            committee_len,
+            attester_index,
             slot,
             beacon_block_root,
             state.current_justified_checkpoint(),
@@ -1276,8 +1244,7 @@ where
                 epoch,
                 root: target_root,
             },
-            &self.spec,
-        )?)
+        ))
     }
 
     /// A list of attestations for each committee for the given slot.
@@ -1292,6 +1259,7 @@ where
         state_root: Hash256,
         head_block_root: SignedBeaconBlockHash,
         attestation_slot: Slot,
+        attester_index: u64,
     ) -> Vec<CommitteeSingleAttestations> {
         let fork = self
             .spec
@@ -1303,6 +1271,7 @@ where
             head_block_root,
             attestation_slot,
             MakeAttestationOptions { limit: None, fork },
+            attester_index,
         )
         .0
     }
@@ -1319,6 +1288,7 @@ where
         state_root: Hash256,
         head_block_root: SignedBeaconBlockHash,
         attestation_slot: Slot,
+        attester_index: u64,
     ) -> Vec<CommitteeAttestations<E>> {
         let fork = self
             .spec
@@ -1329,11 +1299,13 @@ where
             state_root,
             head_block_root,
             attestation_slot,
+            attester_index,
             MakeAttestationOptions { limit: None, fork },
         )
         .0
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn make_single_attestations_with_opts(
         &self,
         attesting_validators: &[usize],
@@ -1342,6 +1314,7 @@ where
         head_block_root: SignedBeaconBlockHash,
         attestation_slot: Slot,
         opts: MakeAttestationOptions,
+        attester_index: u64,
     ) -> (Vec<CommitteeSingleAttestations>, Vec<usize>) {
         let MakeAttestationOptions { limit, fork } = opts;
         let committee_count = state.get_committee_count_at_slot(state.slot()).unwrap();
@@ -1378,6 +1351,7 @@ where
                                 state_root,
                                 i,
                                 *validator_index,
+                                attester_index,
                             )
                             .unwrap();
 
@@ -1427,6 +1401,7 @@ where
         (attestations, attesters)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn make_unaggregated_attestations_with_opts(
         &self,
         attesting_validators: &[usize],
@@ -1434,6 +1409,7 @@ where
         state_root: Hash256,
         head_block_root: SignedBeaconBlockHash,
         attestation_slot: Slot,
+        attester_index: u64,
         opts: MakeAttestationOptions,
     ) -> (Vec<CommitteeAttestations<E>>, Vec<usize>) {
         let MakeAttestationOptions { limit, fork } = opts;
@@ -1462,43 +1438,41 @@ where
                             }
                         }
 
-                        let mut attestation = self
+                        let single_attestation = self
                             .produce_unaggregated_attestation_for_block(
                                 attestation_slot,
                                 bc.index,
+                                attester_index,
                                 head_block_root.into(),
                                 Cow::Borrowed(state),
                                 state_root,
                             )
                             .unwrap();
 
-                        match attestation {
-                            Attestation::Base(ref mut att) => {
-                                att.aggregation_bits.set(i, true).unwrap()
-                            }
-                            Attestation::Electra(ref mut att) => {
-                                att.aggregation_bits.set(i, true).unwrap()
-                            }
-                        }
+                        // Convert to full Attestation<E> and sign at the committee position.
+                        let fork_name = self
+                            .spec
+                            .fork_name_at_slot::<E>(single_attestation.data.slot);
 
-                        *attestation.signature_mut() = {
-                            let domain = self.spec.get_domain(
-                                attestation.data().target.epoch,
-                                Domain::BeaconAttester,
-                                &fork,
-                                state.genesis_validators_root(),
-                            );
+                        let mut attestation: Attestation<E> = single_attestation_to_attestation(
+                            &single_attestation,
+                            bc.committee,
+                            fork_name,
+                        )
+                        .expect("single attestation should convert to attestation");
 
-                            let message = attestation.data().signing_root(domain);
-
-                            let mut agg_sig = AggregateSignature::infinity();
-
-                            agg_sig.add_assign(
-                                &self.validator_keypairs[*validator_index].sk.sign(message),
-                            );
-
-                            agg_sig
-                        };
+                        // Compute signature for this attester and add it at position `i`.
+                        let domain = self.spec.get_domain(
+                            attestation.data().target.epoch,
+                            Domain::BeaconAttester,
+                            &fork,
+                            state.genesis_validators_root(),
+                        );
+                        let message = attestation.data().signing_root(domain);
+                        let sig = self.validator_keypairs[*validator_index].sk.sign(message);
+                        attestation
+                            .add_signature(&sig, i)
+                            .expect("should add signature for attester");
 
                         let subnet_id = SubnetId::compute_subnet_for_attestation::<E>(
                             attestation.to_ref(),
@@ -1593,6 +1567,7 @@ where
         state_root: Hash256,
         head_block_root: Hash256,
         attestation_slot: Slot,
+        attester_index: u64,
     ) -> Vec<Vec<(Attestation<E>, SubnetId)>> {
         let validators: Vec<usize> = match attestation_strategy {
             AttestationStrategy::AllValidators => self.get_all_validators(),
@@ -1604,6 +1579,7 @@ where
             state_root,
             head_block_root.into(),
             attestation_slot,
+            attester_index,
         )
     }
 
@@ -1619,6 +1595,7 @@ where
         state_root: Hash256,
         head_block_root: Hash256,
         attestation_slot: Slot,
+        attester_index: u64,
     ) -> Vec<Vec<(SingleAttestation, SubnetId)>> {
         let validators: Vec<usize> = match attestation_strategy {
             AttestationStrategy::AllValidators => self.get_all_validators(),
@@ -1630,6 +1607,7 @@ where
             state_root,
             head_block_root.into(),
             attestation_slot,
+            attester_index,
         )
     }
 
@@ -1672,9 +1650,11 @@ where
             block_hash,
             slot,
             MakeAttestationOptions { limit, fork },
+            0,
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn make_attestations_with_opts(
         &self,
         attesting_validators: &[usize],
@@ -1683,6 +1663,7 @@ where
         block_hash: SignedBeaconBlockHash,
         slot: Slot,
         opts: MakeAttestationOptions,
+        attester_index: u64,
     ) -> (HarnessAttestations<E>, Vec<usize>) {
         let MakeAttestationOptions { fork, .. } = opts;
         let (unaggregated_attestations, attesters) = self.make_unaggregated_attestations_with_opts(
@@ -1691,6 +1672,7 @@ where
             state_root,
             block_hash,
             slot,
+            attester_index,
             opts,
         );
 

@@ -422,18 +422,13 @@ impl ForkChoiceTest {
         let mut attestation = self
             .harness
             .chain
-            .produce_unaggregated_attestation(current_slot, 0)
+            .produce_unaggregated_attestation(current_slot, 0, 0)
             .expect("should not error while producing attestation");
 
         let validator_committee_index = 0;
         let validator_index = *head
             .beacon_state
-            .get_beacon_committee(
-                current_slot,
-                attestation
-                    .committee_index()
-                    .expect("should get committee index"),
-            )
+            .get_beacon_committee(current_slot, attestation.committee_index)
             .expect("should get committees")
             .committee
             .get(validator_committee_index)
@@ -457,7 +452,6 @@ impl ForkChoiceTest {
         attestation
             .sign(
                 &validator_sk,
-                validator_committee_index,
                 &head.beacon_state.fork(),
                 self.harness.chain.genesis_validators_root,
                 &self.harness.chain.spec,
@@ -467,8 +461,8 @@ impl ForkChoiceTest {
         let single_attestation = SingleAttestation {
             attester_index: validator_index as u64,
             committee_index: validator_committee_index as u64,
-            data: attestation.data().clone(),
-            signature: attestation.signature().clone(),
+            data: attestation.data.clone(),
+            signature: attestation.signature.clone(),
         };
 
         let mut verified_attestation = self

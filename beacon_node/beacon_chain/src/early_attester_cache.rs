@@ -102,8 +102,9 @@ impl<E: EthSpec> EarlyAttesterCache<E> {
         &self,
         request_slot: Slot,
         request_index: CommitteeIndex,
+        attester_index: u64,
         spec: &ChainSpec,
-    ) -> Result<Option<Attestation<E>>, Error> {
+    ) -> Result<Option<SingleAttestation>, Error> {
         let lock = self.item.read();
         let Some(item) = lock.as_ref() else {
             return Ok(None);
@@ -125,24 +126,18 @@ impl<E: EthSpec> EarlyAttesterCache<E> {
             return Ok(None);
         }
 
-        let committee_len =
-            item.committee_lengths
-                .get_committee_length::<E>(request_slot, request_index, spec)?;
-
-        let attestation = Attestation::empty_for_signing(
+        let single = SingleAttestation::empty_for_signing(
             request_index,
-            committee_len,
+            attester_index,
             request_slot,
             item.beacon_block_root,
             item.source,
             item.target,
-            spec,
-        )
-        .map_err(Error::AttestationError)?;
+        );
 
         metrics::inc_counter(&metrics::BEACON_EARLY_ATTESTER_CACHE_HITS);
 
-        Ok(Some(attestation))
+        Ok(Some(single))
     }
 
     /// Returns `true` if `block_root` matches the cached item.
