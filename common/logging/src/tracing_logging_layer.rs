@@ -2,7 +2,6 @@ use crate::utils::is_ascii_control;
 
 use chrono::prelude::*;
 use serde_json::{Map, Value};
-use std::collections::HashMap;
 use std::io::Write;
 use tracing::Subscriber;
 use tracing::field::Field;
@@ -80,13 +79,11 @@ where
 
         event.record(&mut visitor);
 
-        let mut span_data = HashMap::new();
+        let mut span_data = Vec::new();
         if let Some(mut scope) = ctx.event_scope(event) {
             if let Some(span) = scope.next() {
                 if let Some(data) = span.extensions().get::<SpanData>() {
-                    for (k, v) in data.fields.clone() {
-                        span_data.insert(k, v);
-                    }
+                    span_data.extend(data.fields.clone());
                 }
             }
         }
@@ -245,7 +242,7 @@ fn build_log_json(
     visitor: &FieldVisitor,
     plain_level_str: &str,
     meta: &tracing::Metadata<'_>,
-    span_fields: &HashMap<String, String>,
+    span_fields: &[(String, String)],
     writer: &mut impl Write,
 ) {
     let utc_timestamp = Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Micros, true);
@@ -294,7 +291,7 @@ fn build_log_text(
     visitor: &FieldVisitor,
     plain_level_str: &str,
     timestamp: &str,
-    span_fields: &HashMap<String, String>,
+    span_fields: &[(String, String)],
     location: &str,
     color_level_str: &str,
     use_color: bool,
@@ -304,9 +301,7 @@ fn build_log_text(
     let bold_end = "\x1b[0m";
 
     let mut formatted_spans = String::new();
-    let mut span_items: Vec<_> = span_fields.iter().collect();
-    span_items.reverse();
-    for (i, (field_name, field_value)) in span_items.iter().enumerate() {
+    for (i, (field_name, field_value)) in span_fields.iter().rev().enumerate() {
         if use_color {
             formatted_spans.push_str(&format!(
                 "{}{}{}: {}",
@@ -317,7 +312,7 @@ fn build_log_text(
         }
 
         // Check if this is not the last span.
-        if i != span_items.len() - 1 {
+        if i != span_fields.len() - 1 {
             formatted_spans.push_str(", ");
         }
     }
@@ -411,7 +406,7 @@ fn parse_field(val: &str) -> Value {
 #[cfg(test)]
 mod tests {
     use crate::tracing_logging_layer::{FieldVisitor, build_log_text};
-    use std::{collections::HashMap, io::Write};
+    use std::io::Write;
 
     struct Buffer {
         data: Vec<u8>,
@@ -441,7 +436,7 @@ mod tests {
     #[test]
     fn test_build_log_text_single_log_field() {
         let log_fields = vec![("field_name".to_string(), "field_value".to_string())];
-        let span_fields: HashMap<String, String> = HashMap::new();
+        let span_fields = vec![];
         let expected = "Jan 1 08:00:00.000 INFO  test message                                  field_name: field_value \n";
         test_build_log_text(log_fields, span_fields, expected);
     }
@@ -452,7 +447,7 @@ mod tests {
             ("field_name1".to_string(), "field_value1".to_string()),
             ("field_name2".to_string(), "field_value2".to_string()),
         ];
-        let span_fields: HashMap<String, String> = HashMap::new();
+        let span_fields = vec![];
         let expected = "Jan 1 08:00:00.000 INFO  test message                                  field_name1: field_value1, field_name2: field_value2 \n";
         test_build_log_text(log_fields, span_fields, expected);
     }
@@ -460,10 +455,10 @@ mod tests {
     #[test]
     fn test_build_log_text_log_field_and_span() {
         let log_fields = vec![("field_name".to_string(), "field_value".to_string())];
-        let span_fields = HashMap::<String, String>::from([(
+        let span_fields = vec![(
             "span_field_name".to_string(),
             "span_field_value".to_string(),
-        )]);
+        )];
         let expected = "Jan 1 08:00:00.000 INFO  test message                                  field_name: field_value, span_field_name: span_field_value\n";
         test_build_log_text(log_fields, span_fields, expected);
     }
@@ -471,10 +466,10 @@ mod tests {
     #[test]
     fn test_build_log_text_single_span() {
         let log_fields = vec![];
-        let span_fields = HashMap::<String, String>::from([(
+        let span_fields = vec![(
             "span_field_name".to_string(),
             "span_field_value".to_string(),
-        )]);
+        )];
         let expected = "Jan 1 08:00:00.000 INFO  test message                                 span_field_name: span_field_value\n";
         test_build_log_text(log_fields, span_fields, expected);
     }
@@ -482,7 +477,7 @@ mod tests {
     #[test]
     fn test_build_log_text_multiple_spans() {
         let log_fields = vec![];
-        let span_fields: HashMap<String, String> = vec![
+        let span_fields = vec![
             (
                 "span_field_name1".to_string(),
                 "span_field_value1".to_string(),
@@ -491,9 +486,7 @@ mod tests {
                 "span_field_name2".to_string(),
                 "span_field_value2".to_string(),
             ),
-        ]
-        .into_iter()
-        .collect();
+        ];
         let expected = "Jan 1 08:00:00.000 INFO  test message                                 span_field_name2: span_field_value2, span_field_name1: span_field_value1\n";
         test_build_log_text(log_fields, span_fields, expected);
     }
@@ -501,7 +494,7 @@ mod tests {
     #[test]
     fn test_build_log_text_multiple_span_fields() {
         let log_fields = vec![];
-        let span_fields: HashMap<String, String> = vec![
+        let span_fields = vec![
             (
                 "span_field_name1-1".to_string(),
                 "span_field_value1-1".to_string(),
@@ -510,16 +503,14 @@ mod tests {
                 "span_field_name1-2".to_string(),
                 "span_field_value1-2".to_string(),
             ),
-        ]
-        .into_iter()
-        .collect();
+        ];
         let expected = "Jan 1 08:00:00.000 INFO  test message                                 span_field_name1-2: span_field_value1-2, span_field_name1-1: span_field_value1-1\n";
         test_build_log_text(log_fields, span_fields, expected);
     }
 
     fn test_build_log_text(
         log_fields: Vec<(String, String)>,
-        span_fields: HashMap<String, String>,
+        span_fields: Vec<(String, String)>,
         expected: &str,
     ) {
         let visitor = FieldVisitor {
