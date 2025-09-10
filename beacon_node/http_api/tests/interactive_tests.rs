@@ -904,6 +904,7 @@ async fn queue_attestations_from_http() {
                 block.0.state_root(),
                 block_root.into(),
                 attestation_slot,
+                0,
             )
             .into_iter()
             .flat_map(|attestations| attestations.into_iter().map(|(att, _subnet)| att))

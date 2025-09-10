@@ -1667,7 +1667,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
 
     pub fn get_aggregated_attestation(
         &self,
-        attestation: AttestationRef<T::EthSpec>,
+        attestation: AttestationRef<'_, T::EthSpec>,
     ) -> Result<Option<Attestation<T::EthSpec>>, Error> {
         match attestation {
             AttestationRef::Base(att) => self.get_aggregated_attestation_base(&att.data),

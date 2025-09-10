@@ -193,6 +193,7 @@ impl ApiTester {
                 head_state_root,
                 head.beacon_block_root,
                 harness.chain.slot().unwrap(),
+                0,
             )
             .into_iter()
             .flat_map(|vec| vec.into_iter().map(|(attestation, _subnet_id)| attestation))
@@ -373,6 +374,7 @@ impl ApiTester {
                 head_state_root,
                 head.beacon_block_root,
                 harness.chain.slot().unwrap(),
+                0,
             )
             .into_iter()
             .flat_map(|vec| vec.into_iter().map(|(attestation, _subnet_id)| attestation))
@@ -3928,9 +3930,9 @@ impl ApiTester {
 
             let expected = self
                 .chain
-                .produce_unaggregated_attestation(slot, index)
+                .produce_unaggregated_attestation(slot, index, 0)
                 .unwrap()
-                .data()
+                .data
                 .clone();
 
             assert_eq!(result, expected);

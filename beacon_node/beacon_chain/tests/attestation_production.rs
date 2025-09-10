@@ -6,9 +6,7 @@ use beacon_chain::validator_monitor::UNAGGREGATED_ATTESTATION_LAG_SLOTS;
 use beacon_chain::{StateSkipConfig, WhenSlotSkipped, metrics};
 use std::sync::{Arc, LazyLock};
 use tree_hash::TreeHash;
-use types::{
-    AggregateSignature, Attestation, EthSpec, Keypair, MainnetEthSpec, RelativeEpoch, Slot,
-};
+use types::{AggregateSignature, EthSpec, Keypair, MainnetEthSpec, RelativeEpoch, Slot};
 
 pub const VALIDATOR_COUNT: usize = 16;
 
@@ -176,35 +174,28 @@ async fn produces_attestations() {
         let committee_count = committee_cache.committees_per_slot();
 
         for index in 0..committee_count {
-            let committee_len = committee_cache
+            // Choose a concrete attester within the committee (first index).
+            let attester_index = committee_cache
                 .get_beacon_committee(slot, index)
                 .expect("should get committee for slot")
-                .committee
-                .len();
+                .committee[0] as u64;
 
             let attestation = chain
-                .produce_unaggregated_attestation(slot, index)
+                .produce_unaggregated_attestation(slot, index, attester_index)
                 .expect("should produce attestation");
 
-            let (aggregation_bits_len, aggregation_bits_zero) = match &attestation {
-                Attestation::Base(att) => {
-                    (att.aggregation_bits.len(), att.aggregation_bits.is_zero())
-                }
-                Attestation::Electra(att) => {
-                    (att.aggregation_bits.len(), att.aggregation_bits.is_zero())
-                }
-            };
-            assert_eq!(aggregation_bits_len, committee_len, "bad committee len");
-            assert!(aggregation_bits_zero, "some committee bits are set");
-
-            let data = attestation.data();
+            let data = &attestation.data;
 
             assert_eq!(
-                attestation.signature(),
-                &AggregateSignature::infinity(),
+                attestation.signature,
+                AggregateSignature::infinity(),
                 "bad signature"
             );
-            assert_eq!(data.index, index, "bad index");
+            assert_eq!(attestation.committee_index, index, "bad index");
+            assert_eq!(
+                attestation.attester_index, attester_index,
+                "bad attester index"
+            );
             assert_eq!(data.slot, slot, "bad slot");
             assert_eq!(data.beacon_block_root, block_root, "bad block root");
             assert_eq!(
@@ -250,7 +241,7 @@ async fn produces_attestations() {
                     .unwrap();
                 chain
                     .early_attester_cache
-                    .try_attest(slot, index, &chain.spec)
+                    .try_attest(slot, index, attester_index, &chain.spec)
                     .unwrap()
                     .unwrap()
             };
@@ -320,13 +311,13 @@ async fn early_attester_cache_old_request() {
     let attest_slot = head.beacon_block.slot() - 1;
     let attestation = harness
         .chain
-        .produce_unaggregated_attestation(attest_slot, 0)
+        .produce_unaggregated_attestation(attest_slot, 0, 0)
         .unwrap();
 
-    assert_eq!(attestation.data().slot, attest_slot);
+    assert_eq!(attestation.data.slot, attest_slot);
     let attested_block = harness
         .chain
-        .get_blinded_block(&attestation.data().beacon_block_root)
+        .get_blinded_block(&attestation.data.beacon_block_root)
         .unwrap()
         .unwrap();
     assert_eq!(attested_block.slot(), attest_slot);

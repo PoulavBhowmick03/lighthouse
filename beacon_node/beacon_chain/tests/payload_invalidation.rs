@@ -1,6 +1,7 @@
 #![cfg(not(debug_assertions))]
 
 use beacon_chain::block_verification_types::RpcBlock;
+use beacon_chain::single_attestation::single_attestation_to_attestation;
 use beacon_chain::{
     BeaconChainError, BlockError, ChainConfig, ExecutionPayloadError,
     INVALID_JUSTIFIED_PAYLOAD_SHUTDOWN_REASON, NotifyExecutionLayer, OverrideForkchoiceUpdate,
@@ -1188,23 +1189,35 @@ async fn attesting_to_optimistic_head() {
      */
 
     let attestation = {
-        let mut attestation = rig
+        // Build a SingleAttestation pointing at the optimistic head, then convert to Attestation
+        // with one aggregation bit set for a valid committee member.
+        let head_state = head.beacon_state.clone();
+        let committee = head_state
+            .get_beacon_committee(slot, 0)
+            .expect("should get committee for slot");
+        let attester_index = committee.committee[0] as u64;
+
+        let single = SingleAttestation::empty_for_signing(
+            0,              // committee_index
+            attester_index, // attester_index (must be in committee)
+            slot,           // slot to attest to
+            root,           // block root to attest to
+            head_state.current_justified_checkpoint(),
+            Checkpoint {
+                epoch: slot.epoch(E::slots_per_epoch()),
+                root,
+            },
+        );
+
+        let fork_name = rig
             .harness
             .chain
-            .produce_unaggregated_attestation(Slot::new(0), 0)
-            .unwrap();
+            .spec
+            .fork_name_at_slot::<E>(single.data.slot);
 
-        match &mut attestation {
-            Attestation::Base(att) => {
-                att.aggregation_bits.set(0, true).unwrap();
-            }
-            Attestation::Electra(att) => {
-                att.aggregation_bits.set(0, true).unwrap();
-            }
-        }
-
-        attestation.data_mut().slot = slot;
-        attestation.data_mut().beacon_block_root = root;
+        let attestation: Attestation<E> =
+            single_attestation_to_attestation(&single, committee.committee, fork_name)
+                .expect("convert single attestation to attestation");
 
         rig.harness
             .chain
@@ -1220,7 +1233,11 @@ async fn attesting_to_optimistic_head() {
      * Define some closures to produce attestations.
      */
 
-    let produce_unaggregated = || rig.harness.chain.produce_unaggregated_attestation(slot, 0);
+    let produce_unaggregated = || {
+        rig.harness
+            .chain
+            .produce_unaggregated_attestation(slot, 0, 0)
+    };
 
     let get_aggregated = || {
         rig.harness

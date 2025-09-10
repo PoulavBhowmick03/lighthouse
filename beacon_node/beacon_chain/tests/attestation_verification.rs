@@ -125,18 +125,13 @@ fn get_valid_unaggregated_attestation<T: BeaconChainTypes>(
     let current_slot = chain.slot().expect("should get slot");
 
     let mut valid_attestation = chain
-        .produce_unaggregated_attestation(current_slot, 0)
+        .produce_unaggregated_attestation(current_slot, 0, 0)
         .expect("should not error while producing attestation");
 
     let validator_committee_index = 0;
     let validator_index = *head
         .beacon_state
-        .get_beacon_committee(
-            current_slot,
-            valid_attestation
-                .committee_index()
-                .expect("should get committee index"),
-        )
+        .get_beacon_committee(current_slot, valid_attestation.committee_index)
         .expect("should get committees")
         .committee
         .get(validator_committee_index)
@@ -147,7 +142,6 @@ fn get_valid_unaggregated_attestation<T: BeaconChainTypes>(
     valid_attestation
         .sign(
             &validator_sk,
-            validator_committee_index,
             &head.beacon_state.fork(),
             chain.genesis_validators_root,
             &chain.spec,
@@ -155,10 +149,10 @@ fn get_valid_unaggregated_attestation<T: BeaconChainTypes>(
         .expect("should sign attestation");
 
     let single_attestation = SingleAttestation {
-        committee_index: valid_attestation.committee_index().unwrap(),
+        committee_index: valid_attestation.committee_index,
         attester_index: validator_index as u64,
-        data: valid_attestation.data().clone(),
-        signature: valid_attestation.signature().clone(),
+        data: valid_attestation.data.clone(),
+        signature: valid_attestation.signature.clone(),
     };
 
     let subnet_id = SubnetId::compute_subnet_for_single_attestation::<T::EthSpec>(
@@ -1551,6 +1545,7 @@ async fn attestation_verification_use_head_state_fork() {
                     fork: capella_fork,
                     limit: None,
                 },
+                0,
             )
             .0
             .first()
@@ -1582,6 +1577,7 @@ async fn attestation_verification_use_head_state_fork() {
                     fork: bellatrix_fork,
                     limit: None,
                 },
+                0,
             )
             .0
             .first()
@@ -1656,6 +1652,7 @@ async fn aggregated_attestation_verification_use_head_state_fork() {
                     fork: capella_fork,
                     limit: None,
                 },
+                0,
             )
             .0
             .into_iter()
@@ -1683,6 +1680,7 @@ async fn aggregated_attestation_verification_use_head_state_fork() {
                     fork: bellatrix_fork,
                     limit: None,
                 },
+                0,
             )
             .0
             .into_iter()
