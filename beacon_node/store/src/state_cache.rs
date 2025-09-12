@@ -1,14 +1,12 @@
 use crate::hdiff::HDiffBuffer;
 use crate::{
     Error,
-    memsize::{BeaconStateMemorySize, BeaconStateWrapper},
     metrics::{self, HOT_METRIC},
 };
 use lru::LruCache;
 use milhouse::mem::MemoryTracker;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::num::NonZeroUsize;
-use std::time::{Duration, Instant};
 use tracing::instrument;
 use types::{BeaconState, ChainSpec, Epoch, EthSpec, Hash256, Slot};
 /// Fraction of the LRU cache to leave intact during culling.
@@ -413,77 +411,74 @@ impl<E: EthSpec> StateCache<E> {
             .collect::<Vec<_>>();
 
         for state_root in &state_roots_to_delete {
-            self.cached_bytes = self.cached_bytes.saturating_sub(
-                self.states
-                    .peek(state_root)
-                    .map_or(0, |(_, state)| state.memory_size()),
-            );
             self.delete_state(state_root);
         }
 
         state_roots_to_delete
     }
 
-    fn measure_cached_memory_size(&self) -> (usize, Duration) {
+    pub fn measure_cached_memory_size(&self) -> (usize, std::time::Duration) {
+        // start histogram
+        let timer = metrics::start_timer(&metrics::BEACON_STATE_MEMORY_SIZE_CALCULATION_TIME);
+
         let mut tracker = MemoryTracker::default();
         let mut total_bytes: usize = 0;
-        let timer = Instant::now();
-        // Use MemoryTracker on the states
-        // if let Some(finalized_state) = &self.finalized_state {
-        //     total_bytes += tracker
-        //         .track_item(&BeaconStateWrapper(&finalized_state.state))
-        //         .differential_size;
-        // }
+
         for (_, (_, state)) in &self.states {
-            total_bytes += tracker
-                .track_item(&BeaconStateWrapper(state))
-                .differential_size;
+            total_bytes = total_bytes.saturating_add(tracker.track_item(state).differential_size);
         }
 
-        let elapsed_time = timer.elapsed();
-        (total_bytes, elapsed_time)
+        // stop histogram
+        if let Some(t) = timer {
+            t.observe_duration();
+        }
+
+        // set the gauge *here*
+        let as_i64 = i64::try_from(total_bytes).unwrap_or(i64::MAX);
+
+        // If your helper returns (), add an explicit guard to see if the static is OK:
+        match &*metrics::STORE_BEACON_STATE_CACHE_MEMORY_SIZE {
+            Ok(_) => {
+                metrics::set_gauge(&metrics::STORE_BEACON_STATE_CACHE_MEMORY_SIZE, as_i64);
+            }
+            Err(e) => {
+                // TEMPORARY: log once to prove if registration failed
+                tracing::warn!("STORE_BEACON_STATE_CACHE_MEMORY_SIZE not registered: {e}");
+            }
+        }
+
+        (total_bytes, std::time::Duration::from_secs(0)) // or your elapsed, if you still return it
     }
 
-    fn recompute_cached_bytes(&mut self) {
-        let (mut total_bytes, _) = self.measure_cached_memory_size();
+    pub fn recompute_cached_bytes(&mut self) {
+        let mut total_bytes = self.measure_cached_memory_size().0; // sets gauge inside
         self.cached_bytes = total_bytes;
 
-        // Update metric again
+        // still okay to set again, but not required since measure_* already did it
         metrics::set_gauge(
             &metrics::STORE_BEACON_STATE_CACHE_MEMORY_SIZE,
-            total_bytes as i64,
+            i64::try_from(total_bytes).unwrap_or(i64::MAX),
         );
 
-        let batch = self.headroom.get().clamp(5, 64); // tune batch size
+        let batch = self.headroom.get().clamp(5, 64);
 
         while total_bytes > self.max_cached_bytes {
-            // Cull the cache until we are under the max_cached_bytes limit.
             let deleted_states = self.cull(batch);
             if deleted_states.is_empty() {
-                // No more states to delete, break out of the loop.
                 break;
             }
 
-            // Recalculate the memory size after culling.
-            let (new_total_bytes, elapsed_time) = self.measure_cached_memory_size();
-            total_bytes = new_total_bytes;
+            // measure again after culling; this will also update the gauge
+            total_bytes = self.measure_cached_memory_size().0;
             self.cached_bytes = total_bytes;
 
-            // Update metric with the new size
             metrics::set_gauge(
                 &metrics::STORE_BEACON_STATE_CACHE_MEMORY_SIZE,
-                total_bytes as i64,
-            );
-
-            // Log the time taken for recalculation
-            metrics::observe(
-                &metrics::BEACON_STATE_MEMORY_SIZE_CALCULATION_TIME,
-                elapsed_time.as_secs_f64(),
+                i64::try_from(total_bytes).unwrap_or(i64::MAX),
             );
         }
     }
 }
-
 impl BlockMap {
     fn insert(&mut self, block_root: Hash256, slot: Slot, state_root: Hash256) {
         let slot_map = self.blocks.entry(block_root).or_default();

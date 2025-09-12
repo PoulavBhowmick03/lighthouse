@@ -19,7 +19,6 @@ pub mod historic_state_cache;
 pub mod hot_cold_store;
 mod impls;
 mod memory_store;
-pub mod memsize;
 pub mod metadata;
 pub mod metrics;
 pub mod partial_beacon_state;
