@@ -380,8 +380,8 @@ Options:
       --state-cache-headroom <N>
           Minimum number of states to cull from the state cache when it gets
           full [default: 1]
-      --state-cache-max-MiB <MiB>
-          Specifies the maximum size of the state cache in MiB [default:
+      --state-cache-max-size <MEGABYTES>
+          Specifies the maximum size of the state cache in megabytes [default:
           512]
       --state-cache-size <STATE_CACHE_SIZE>
           Specifies the size of the state cache [default: 128]

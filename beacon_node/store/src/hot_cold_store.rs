@@ -236,7 +236,7 @@ impl<E: EthSpec> HotColdDB<E, MemoryStore<E>, MemoryStore<E>> {
                 config.state_cache_size,
                 config.state_cache_headroom,
                 config.hot_hdiff_buffer_cache_size,
-                config.max_state_cache_bytes,
+                config.max_state_cache_size,
             )),
             historic_state_cache: Mutex::new(HistoricStateCache::new(
                 config.cold_hdiff_buffer_cache_size,
@@ -291,7 +291,7 @@ impl<E: EthSpec> HotColdDB<E, BeaconNodeBackend<E>, BeaconNodeBackend<E>> {
                 config.state_cache_size,
                 config.state_cache_headroom,
                 config.hot_hdiff_buffer_cache_size,
-                config.max_state_cache_bytes,
+                config.max_state_cache_size,
             )),
             historic_state_cache: Mutex::new(HistoricStateCache::new(
                 config.cold_hdiff_buffer_cache_size,

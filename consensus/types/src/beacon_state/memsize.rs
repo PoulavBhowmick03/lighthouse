@@ -22,9 +22,7 @@ impl<E: EthSpec> MemorySize for BeaconState<E> {
         self as *const _ as usize
     }
 
-    // Traverse into selected nested containers whose element types we can account for.
-    // For containers of foreign element types (e.g., Hash256/B256) we avoid traversal and
-    // account for them in intrinsic_size via len * size_of::<T>().
+    // Traverse into selected nested containers
     fn subtrees<'a>(&'a self) -> Vec<&'a (dyn MemorySize + 'a)> {
         let mut subtrees: Vec<&'a (dyn MemorySize + 'a)> = vec![];
         match self {
@@ -101,19 +99,6 @@ impl<E: EthSpec> MemorySize for BeaconState<E> {
                 );
             }
         }
-        // if let Ok(current_sc) = self.current_sync_committee() {
-        //     subtrees.push(&**current_sc);
-        // }
-        // if let Ok(next_sc) = self.next_sync_committee() {
-        //     subtrees.push(&**next_sc);
-        // }
-
-        // for committee_cache in self.committee_caches() {
-        //     subtrees.push(&**committee_cache);
-        // }
-
-        // FIXME(sproul): more caches
-
         subtrees
     }
 
