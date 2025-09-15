@@ -275,11 +275,11 @@ pub static STORE_BEACON_STATE_CACHE_MEMORY_SIZE: LazyLock<Result<IntGauge>> = La
         "Memory consumed by items in the beacon store state cache",
     )
 });
-pub static BEACON_STATE_MEMORY_SIZE_CALCULATION_TIME: LazyLock<Result<Histogram>> =
+pub static STATE_CACHE_MEMORY_SIZE_CALCULATION_TIME: LazyLock<Result<Histogram>> =
     LazyLock::new(|| {
         try_create_histogram(
-            "beacon_state_memory_size_calculation_time",
-            "Time taken to calculate the memory size of a beacon state.",
+            "state_cache_memory_size_calculation_time",
+            "Time taken to calculate the memory size of the state cache.",
         )
     });
 pub static STORE_BEACON_HISTORIC_STATE_CACHE_SIZE: LazyLock<Result<IntGauge>> =

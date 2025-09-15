@@ -506,19 +506,9 @@ impl<E: EthSpec, Hot: ItemStore<E>, Cold: ItemStore<E>> HotColdDB<E, Hot, Cold> 
             );
         }
         let state_cache = self.state_cache.lock();
-        let (bytes, _age) = state_cache.measure_cached_memory_size();
-        metrics::set_gauge(
-            &metrics::STORE_BEACON_STATE_CACHE_MEMORY_SIZE,
-            i64::try_from(bytes).unwrap_or(i64::MAX),
-        );
-
         metrics::set_gauge(
             &metrics::STORE_BEACON_STATE_CACHE_SIZE,
             state_cache.len() as i64,
-        );
-        metrics::set_gauge(
-            &metrics::STORE_BEACON_STATE_CACHE_MEMORY_SIZE,
-            state_cache.cached_bytes() as i64,
         );
         metrics::set_gauge_vec(
             &metrics::STORE_BEACON_HDIFF_BUFFER_CACHE_SIZE,

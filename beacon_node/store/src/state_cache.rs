@@ -46,7 +46,6 @@ pub struct StateCache<E: EthSpec> {
     max_epoch: Epoch,
     head_block_root: Hash256,
     headroom: NonZeroUsize,
-    cached_bytes: usize,
     max_cached_bytes: usize,
     put_count: usize,
 }
@@ -97,17 +96,12 @@ impl<E: EthSpec> StateCache<E> {
             head_block_root: Hash256::ZERO,
             headroom,
             max_cached_bytes,
-            cached_bytes: 0,
             put_count: 0,
         }
     }
 
     pub fn max_cached_bytes(&self) -> usize {
         self.max_cached_bytes
-    }
-
-    pub fn cached_bytes(&self) -> usize {
-        self.cached_bytes
     }
 
     pub fn len(&self) -> usize {
@@ -419,47 +413,25 @@ impl<E: EthSpec> StateCache<E> {
 
     pub fn measure_cached_memory_size(&self) -> (usize, std::time::Duration) {
         // start histogram
-        let timer = metrics::start_timer(&metrics::BEACON_STATE_MEMORY_SIZE_CALCULATION_TIME);
+        let timer = metrics::start_timer(&metrics::STATE_CACHE_MEMORY_SIZE_CALCULATION_TIME);
 
         let mut tracker = MemoryTracker::default();
-        let mut total_bytes: usize = 0;
-
         for (_, (_, state)) in &self.states {
-            total_bytes = total_bytes.saturating_add(tracker.track_item(state).differential_size);
+            // Track each state individually
+            tracker.track_item(state);
         }
+        let total_bytes = tracker.total_size();
 
-        // stop histogram
-        if let Some(t) = timer {
-            t.observe_duration();
-        }
-
-        // set the gauge *here*
-        let as_i64 = i64::try_from(total_bytes).unwrap_or(i64::MAX);
-
-        // If your helper returns (), add an explicit guard to see if the static is OK:
-        match &*metrics::STORE_BEACON_STATE_CACHE_MEMORY_SIZE {
-            Ok(_) => {
-                metrics::set_gauge(&metrics::STORE_BEACON_STATE_CACHE_MEMORY_SIZE, as_i64);
-            }
-            Err(e) => {
-                // TEMPORARY: log once to prove if registration failed
-                tracing::warn!("STORE_BEACON_STATE_CACHE_MEMORY_SIZE not registered: {e}");
-            }
-        }
-
-        (total_bytes, std::time::Duration::from_secs(0)) // or your elapsed, if you still return it
+        let duration = metrics::stop_timer_with_duration(timer);
+        metrics::set_gauge(
+            &metrics::STORE_BEACON_STATE_CACHE_MEMORY_SIZE,
+            total_bytes as i64,
+        );
+        (total_bytes, duration)
     }
 
     pub fn recompute_cached_bytes(&mut self) {
-        let mut total_bytes = self.measure_cached_memory_size().0; // sets gauge inside
-        self.cached_bytes = total_bytes;
-
-        // still okay to set again, but not required since measure_* already did it
-        metrics::set_gauge(
-            &metrics::STORE_BEACON_STATE_CACHE_MEMORY_SIZE,
-            i64::try_from(total_bytes).unwrap_or(i64::MAX),
-        );
-
+        let (mut total_bytes, _) = self.measure_cached_memory_size();
         let batch = self.headroom.get().clamp(5, 64);
 
         while total_bytes > self.max_cached_bytes {
@@ -468,14 +440,8 @@ impl<E: EthSpec> StateCache<E> {
                 break;
             }
 
-            // measure again after culling; this will also update the gauge
+            // measure again after culling
             total_bytes = self.measure_cached_memory_size().0;
-            self.cached_bytes = total_bytes;
-
-            metrics::set_gauge(
-                &metrics::STORE_BEACON_STATE_CACHE_MEMORY_SIZE,
-                i64::try_from(total_bytes).unwrap_or(i64::MAX),
-            );
         }
     }
 }
