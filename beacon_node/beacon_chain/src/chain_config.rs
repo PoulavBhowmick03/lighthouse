@@ -10,7 +10,7 @@ pub const DEFAULT_RE_ORG_MAX_EPOCHS_SINCE_FINALIZATION: Epoch = Epoch::new(2);
 /// Default to 1/12th of the slot, which is 1 second on mainnet.
 pub const DEFAULT_RE_ORG_CUTOFF_DENOMINATOR: u32 = 12;
 pub const DEFAULT_FORK_CHOICE_BEFORE_PROPOSAL_TIMEOUT: u64 = 250;
-pub const DEFAULT_STATE_CACHE_MAX_SIZE: usize = 512 * 1024 * 1024;
+pub const DEFAULT_STATE_CACHE_MAX_SIZE: usize = 1024 * 1024 * 1024;
 /// Default fraction of a slot lookahead for payload preparation (12/3 = 4 seconds on mainnet).
 pub const DEFAULT_PREPARE_PAYLOAD_LOOKAHEAD_FACTOR: u32 = 3;
 

@@ -800,7 +800,7 @@ pub fn cli_app() -> Command {
                 .long("state-cache-max-size")
                 .value_name("MEGABYTES")
                 .help("Specifies the maximum size of the state cache in megabytes")
-                .default_value("512")
+                .default_value("1024")
                 .action(ArgAction::Set)
                 .display_order(0)
         )

@@ -17,6 +17,12 @@ const CULL_EXEMPT_DENOMINATOR: usize = 10;
 /// be culled from the cache.
 const EPOCH_FINALIZATION_LIMIT: u64 = 4;
 const RECOMPUTE_INTERVAL: usize = 10;
+/// Minimum and maximum number of states to prune when recomputing.
+const MIN_RECOMPUTE_CULL_BATCH: usize = 5;
+const MAX_RECOMPUTE_CULL_BATCH: usize = 64;
+/// Maximum number of recompute passes to avoid spending unbounded time
+/// recalculating cache usage.
+const MAX_RECOMPUTE_CULL_PASSES: usize = 8;
 #[derive(Debug)]
 pub struct FinalizedState<E: EthSpec> {
     state_root: Hash256,
@@ -411,37 +417,75 @@ impl<E: EthSpec> StateCache<E> {
         state_roots_to_delete
     }
 
-    pub fn measure_cached_memory_size(&self) -> (usize, std::time::Duration) {
+    pub fn measure_cached_memory_size(&self) -> usize {
         // start histogram
-        let timer = metrics::start_timer(&metrics::STATE_CACHE_MEMORY_SIZE_CALCULATION_TIME);
+        let _timer = metrics::start_timer(&metrics::STATE_CACHE_MEMORY_SIZE_CALCULATION_TIME);
 
         let mut tracker = MemoryTracker::default();
         for (_, (_, state)) in &self.states {
             // Track each state individually
+            let _per_state_timer =
+                metrics::start_timer(&metrics::STATE_CACHE_MEMORY_ITEM_CALCULATION_TIME);
             tracker.track_item(state);
         }
         let total_bytes = tracker.total_size();
 
-        let duration = metrics::stop_timer_with_duration(timer);
         metrics::set_gauge(
             &metrics::STORE_BEACON_STATE_CACHE_MEMORY_SIZE,
             total_bytes as i64,
         );
-        (total_bytes, duration)
+        total_bytes
     }
 
     pub fn recompute_cached_bytes(&mut self) {
-        let (mut total_bytes, _) = self.measure_cached_memory_size();
-        let batch = self.headroom.get().clamp(5, 64);
+        let states_limit = self.capacity();
+        let mut total_bytes = self.measure_cached_memory_size();
+        let mut num_states = self.len();
 
-        while total_bytes > self.max_cached_bytes {
-            let deleted_states = self.cull(batch);
-            if deleted_states.is_empty() {
+        if total_bytes <= self.max_cached_bytes && num_states <= states_limit {
+            return;
+        }
+
+        let mut passes: usize = 0;
+        while (total_bytes > self.max_cached_bytes || num_states > states_limit)
+            && num_states > 1
+            && passes < MAX_RECOMPUTE_CULL_PASSES
+        {
+            let max_removable = num_states.saturating_sub(1);
+            if max_removable == 0 {
                 break;
             }
 
-            // measure again after culling
-            total_bytes = self.measure_cached_memory_size().0;
+            let batch = self
+                .headroom
+                .get()
+                .clamp(MIN_RECOMPUTE_CULL_BATCH, MAX_RECOMPUTE_CULL_BATCH)
+                .min(max_removable);
+            tracing::debug!(
+                "recompute iteration start: {}, {}, {}",
+                total_bytes,
+                num_states,
+                passes
+            );
+
+            if self.cull(batch).is_empty() {
+                break;
+            }
+
+            total_bytes = self.measure_cached_memory_size();
+            num_states = self.len();
+            passes += 1;
+        }
+
+        if total_bytes > self.max_cached_bytes || num_states > states_limit {
+            tracing::debug!(
+                total_bytes,
+                byte_limit = self.max_cached_bytes,
+                num_states,
+                states_limit,
+                passes,
+                "state cache recompute could not fully satisfy limits"
+            );
         }
     }
 }
@@ -557,5 +601,169 @@ impl HotHDiffBufferCache {
             .iter()
             .map(|(_, (_, buffer))| buffer.size())
             .sum()
+    }
+}
+
+mod tests {
+    use super::*;
+    use std::num::NonZeroUsize;
+    use types::{Eth1Data, MinimalEthSpec};
+
+    #[allow(dead_code)]
+    fn new_cache(max_cached_bytes: usize) -> StateCache<MinimalEthSpec> {
+        StateCache::new(
+            NonZeroUsize::new(8).unwrap(),
+            NonZeroUsize::new(2).unwrap(),
+            NonZeroUsize::new(2).unwrap(),
+            max_cached_bytes,
+        )
+    }
+
+    #[allow(dead_code)]
+    fn hash(byte: u8) -> Hash256 {
+        Hash256::with_last_byte(byte)
+    }
+
+    #[allow(dead_code)]
+    fn build_state(slot: Slot, advanced: bool, spec: &ChainSpec) -> BeaconState<MinimalEthSpec> {
+        let mut state = BeaconState::new(0, Eth1Data::default(), spec);
+        *state.slot_mut() = slot;
+        let header_slot = if advanced && slot > Slot::new(0) {
+            slot.saturating_sub(1u64)
+        } else {
+            slot
+        };
+
+        state.latest_block_header_mut().slot = header_slot;
+        state
+    }
+
+    #[test]
+    fn recompute_with_high_limit() {
+        type E = MinimalEthSpec;
+        let spec = E::default_spec();
+        let mut cache = new_cache(usize::MAX);
+        let mut inserted_roots = vec![];
+
+        for i in 0..3 {
+            let state_root = hash(200 + i as u8);
+            let block_root = hash(220 + i as u8);
+            let state = build_state(Slot::new(70 + i as u64), false, &spec);
+            cache.put_state(state_root, block_root, &state).unwrap();
+            inserted_roots.push(state_root);
+        }
+
+        let len_before = cache.len();
+        cache.recompute_cached_bytes();
+        assert_eq!(cache.len(), len_before);
+
+        for root in inserted_roots {
+            assert!(cache.get_by_state_root(root).is_some());
+        }
+    }
+
+    #[test]
+    fn recompute_cached_bytes_byte_limit() {
+        type E = MinimalEthSpec;
+        let spec = E::default_spec();
+        let mut cache = new_cache(usize::MAX);
+
+        let head_block_root = hash(180);
+        let head_state = build_state(Slot::new(120), false, &spec);
+        cache
+            .put_state(hash(150), head_block_root, &head_state)
+            .unwrap();
+        cache.update_head_block_root(head_block_root);
+
+        let single_state_bytes = cache.measure_cached_memory_size();
+        assert!(single_state_bytes > 0);
+        let mut additional_roots = vec![];
+
+        for i in 0..3 {
+            let state_root = hash(181 + i as u8);
+            let block_root = hash(200 + i as u8);
+            let state = build_state(Slot::new(121 + i as u64), true, &spec);
+            cache.put_state(state_root, block_root, &state).unwrap();
+            additional_roots.push(state_root);
+        }
+        // assert!(cache.len() == 1);
+        assert!(cache.len() > 1);
+        assert!(cache.measure_cached_memory_size() > single_state_bytes);
+
+        cache.max_cached_bytes = single_state_bytes;
+        let initial_len = cache.len();
+        cache.recompute_cached_bytes();
+
+        let total_bytes = cache.measure_cached_memory_size();
+
+        assert!(total_bytes <= cache.max_cached_bytes());
+        assert!(cache.len() < initial_len);
+        assert!(cache.len() >= 1);
+    }
+
+    #[test]
+    fn max_cached_bytes_affect_recompute() {
+        type E = MinimalEthSpec;
+        let spec = E::default_spec();
+        let initial_limit = 1024 * 1024;
+        let mut cache = new_cache(initial_limit);
+        assert_eq!(cache.max_cached_bytes(), initial_limit);
+
+        let primary_root = hash(210);
+        let primary_block_root = hash(220);
+        let primary_state = build_state(Slot::new(200), false, &spec);
+        cache
+            .put_state(primary_root, primary_block_root, &primary_state)
+            .unwrap();
+        cache.update_head_block_root(primary_block_root);
+        let single_bytes = cache.measure_cached_memory_size();
+        assert!(single_bytes > 0);
+
+        let secondary_root = hash(211);
+        let secondary_block_root = hash(221);
+        let secondary_state = build_state(Slot::new(201), false, &spec);
+        cache
+            .put_state(secondary_root, secondary_block_root, &secondary_state)
+            .unwrap();
+        assert!(cache.measure_cached_memory_size() > single_bytes);
+
+        cache.max_cached_bytes = single_bytes;
+        assert_eq!(cache.max_cached_bytes(), single_bytes);
+        cache.recompute_cached_bytes();
+
+        let total_bytes = cache.measure_cached_memory_size();
+        assert!(total_bytes <= cache.max_cached_bytes());
+        assert!(cache.len() <= 1);
+    }
+
+    #[test]
+    fn test_recompute() {
+        type E = MinimalEthSpec;
+        let spec = E::default_spec();
+        let mut cache = StateCache::new(
+            NonZeroUsize::new(128).unwrap(),
+            NonZeroUsize::new(64).unwrap(),
+            NonZeroUsize::new(2).unwrap(),
+            1,
+        );
+
+        for i in 0..120u8 {
+            let state_root = hash(30 + i);
+            let block_root = hash(50 + i);
+            let state: BeaconState<MinimalEthSpec> =
+                build_state(Slot::new(50 + u64::from(i)), i % 2 == 0, &spec);
+            cache.put_state(state_root, block_root, &state).unwrap();
+            cache.put_count = 0;
+        }
+
+        let initial_len = cache.len();
+        assert!(initial_len > MAX_RECOMPUTE_CULL_PASSES * MIN_RECOMPUTE_CULL_BATCH);
+
+        cache.recompute_cached_bytes();
+
+        let final_len = cache.len();
+        let removed = initial_len.saturating_sub(final_len);
+        assert!(removed > 0);
+        assert!(cache.measure_cached_memory_size() > cache.max_cached_bytes());
     }
 }

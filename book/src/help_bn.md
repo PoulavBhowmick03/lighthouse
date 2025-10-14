@@ -382,7 +382,7 @@ Options:
           full [default: 1]
       --state-cache-max-size <MEGABYTES>
           Specifies the maximum size of the state cache in megabytes [default:
-          512]
+          1024]
       --state-cache-size <STATE_CACHE_SIZE>
           Specifies the size of the state cache [default: 128]
       --suggested-fee-recipient <SUGGESTED-FEE-RECIPIENT>
