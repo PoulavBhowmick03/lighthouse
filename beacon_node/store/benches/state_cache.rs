@@ -1,5 +1,5 @@
 use bls::{FixedBytesExtended, Hash256, PublicKeyBytes};
-use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
+use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use rand::Rng;
 use ssz::Decode;
 use std::num::NonZeroUsize;
@@ -72,13 +72,14 @@ pub fn all_benches(c: &mut Criterion) {
             let state = build_state(&spec, slot, validator_count, &mut rng);
             let root = Hash256::from_low_u64_le(i as u64 + 1);
             (root, root, state)
-        }).collect();
+        })
+        .collect();
 
     let capacity = NonZeroUsize::new(num_states).unwrap();
     let headroom = NonZeroUsize::new(1).unwrap();
     let hdiff_capacity = NonZeroUsize::new(1).unwrap();
 
-        c.bench_function("state_cache_insert_without_memory_limit", |b| {
+    c.bench_function("state_cache_insert_without_memory_limit", |b| {
         b.iter_batched(
             || StateCache::new(capacity, headroom, hdiff_capacity, usize::MAX),
             |mut cache| {
@@ -103,10 +104,9 @@ pub fn all_benches(c: &mut Criterion) {
             BatchSize::SmallInput,
         );
     });
-
 }
 
-criterion_group!{
+criterion_group! {
     name = benches;
     config = Criterion::default().sample_size(10);
     targets = all_benches
