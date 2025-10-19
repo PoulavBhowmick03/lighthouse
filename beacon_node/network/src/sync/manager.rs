@@ -33,7 +33,7 @@
 //! needs to be searched for (i.e if an attestation references an unknown block) this manager can
 //! search for the block and subsequently search for parents if needed.
 
-use super::backfill_sync::{BackFillSync, ProcessResult, SyncStart};
+use super::backfill_sync::{BackFillError, BackFillSync, ProcessResult, SyncStart};
 use super::block_lookups::BlockLookups;
 use super::network_context::{
     CustodyByRootResult, RangeBlockComponent, RangeRequestId, RpcEvent, SyncNetworkContext,
@@ -620,9 +620,14 @@ impl<T: BeaconChainTypes> SyncManager<T> {
                                 };
                             }
                             Ok(SyncStart::NotSyncing) => {} // Ignore updating the state if the backfill sync state didn't start.
-                            Err(e) => {
-                                error!(error = ?e, "Backfill sync failed to start");
-                            }
+                            Err(e) => match &e {
+                                BackFillError::Paused => {
+                                    info!(error = ?e, "Backfill sync start deferred; awaiting peers");
+                                }
+                                _ => {
+                                    error!(error = ?e, "Backfill sync failed to start");
+                                }
+                            },
                         }
                     }
 
