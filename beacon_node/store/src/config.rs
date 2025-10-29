@@ -21,7 +21,7 @@ pub const DEFAULT_SLOTS_PER_RESTORE_POINT: u64 = 8192;
 pub const DEFAULT_EPOCHS_PER_STATE_DIFF: u64 = 8;
 pub const DEFAULT_BLOCK_CACHE_SIZE: usize = 0;
 pub const DEFAULT_STATE_CACHE_SIZE: NonZeroUsize = new_non_zero_usize(128);
-pub const DEFAULT_STATE_CACHE_MAX_SIZE: usize = 1024 * 1024 * 1024;
+pub const DEFAULT_STATE_CACHE_MAX_BYTES: usize = 4 * 1024 * 1024 * 1024;
 pub const DEFAULT_STATE_CACHE_HEADROOM: NonZeroUsize = new_non_zero_usize(1);
 pub const DEFAULT_COMPRESSION_LEVEL: i32 = 1;
 pub const DEFAULT_HISTORIC_STATE_CACHE_SIZE: NonZeroUsize = new_non_zero_usize(1);
@@ -39,7 +39,7 @@ pub struct StoreConfig {
     /// Maximum number of states to store in the in-memory state cache.
     pub state_cache_size: NonZeroUsize,
     /// Maximum number of bytes to store in the in-memory state cache.
-    pub max_state_cache_size: usize,
+    pub state_cache_max_bytes: usize,
     /// Minimum number of states to cull from the state cache upon fullness.
     pub state_cache_headroom: NonZeroUsize,
     /// Compression level for blocks, state diffs and other compressed values.
@@ -110,7 +110,7 @@ impl Default for StoreConfig {
         Self {
             block_cache_size: DEFAULT_BLOCK_CACHE_SIZE,
             state_cache_size: DEFAULT_STATE_CACHE_SIZE,
-            max_state_cache_size: DEFAULT_STATE_CACHE_MAX_SIZE,
+            state_cache_max_bytes: DEFAULT_STATE_CACHE_MAX_BYTES,
             state_cache_headroom: DEFAULT_STATE_CACHE_HEADROOM,
             historic_state_cache_size: DEFAULT_HISTORIC_STATE_CACHE_SIZE,
             cold_hdiff_buffer_cache_size: DEFAULT_COLD_HDIFF_BUFFER_CACHE_SIZE,

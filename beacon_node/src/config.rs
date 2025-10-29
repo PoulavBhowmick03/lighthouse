@@ -366,9 +366,8 @@ pub fn get_config<E: EthSpec>(
             .map_err(|_| "state-cache-size is not a valid integer".to_string())?;
     }
 
-    if let Some(max_bytes) = clap_utils::parse_optional::<usize>(cli_args, "state-cache-max-size")?
-    {
-        client_config.store.max_state_cache_size = max_bytes * 1024 * 1024;
+    if let Some(max_mb) = clap_utils::parse_optional::<usize>(cli_args, "state-cache-max-mb")? {
+        client_config.store.state_cache_max_bytes = max_mb * 1024 * 1024;
     }
 
     if let Some(historic_state_cache_size) =

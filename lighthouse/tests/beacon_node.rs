@@ -1,13 +1,16 @@
 use crate::exec::{CommandLineTestExec, CompletedTest};
 use beacon_node::beacon_chain::chain_config::{
     DEFAULT_RE_ORG_CUTOFF_DENOMINATOR, DEFAULT_RE_ORG_HEAD_THRESHOLD,
-    DEFAULT_RE_ORG_MAX_EPOCHS_SINCE_FINALIZATION, DEFAULT_STATE_CACHE_MAX_SIZE,
-    DEFAULT_SYNC_TOLERANCE_EPOCHS, DisallowedReOrgOffsets,
+    DEFAULT_RE_ORG_MAX_EPOCHS_SINCE_FINALIZATION, DEFAULT_SYNC_TOLERANCE_EPOCHS,
+    DisallowedReOrgOffsets,
 };
 use beacon_node::beacon_chain::custody_context::NodeCustodyType;
 use beacon_node::{
-    ClientConfig as Config, beacon_chain::graffiti_calculator::GraffitiOrigin,
-    beacon_chain::store::config::DatabaseBackend as BeaconNodeBackend,
+    ClientConfig as Config,
+    beacon_chain::graffiti_calculator::GraffitiOrigin,
+    beacon_chain::store::config::{
+        DEFAULT_STATE_CACHE_MAX_BYTES, DatabaseBackend as BeaconNodeBackend,
+    },
 };
 use beacon_processor::BeaconProcessorConfig;
 use lighthouse_network::PeerId;
@@ -1862,8 +1865,8 @@ fn state_cache_max_bytes_default() {
         .run_with_zero_port()
         .with_config(|config| {
             assert_eq!(
-                config.store.max_state_cache_size,
-                DEFAULT_STATE_CACHE_MAX_SIZE
+                config.store.state_cache_max_bytes,
+                DEFAULT_STATE_CACHE_MAX_BYTES
             );
         });
 }
