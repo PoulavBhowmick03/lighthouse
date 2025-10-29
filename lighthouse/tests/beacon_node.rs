@@ -1871,6 +1871,16 @@ fn state_cache_max_bytes_default() {
         });
 }
 #[test]
+fn state_cache_max_bytes_flag() {
+    const MB: usize = 1024;
+    CommandLineTest::new()
+        .flag("state-cache-max-mb", Some("1024"))
+        .run_with_zero_port()
+        .with_config(|config| {
+            assert_eq!(config.store.state_cache_max_bytes, MB * 1024 * 1024);
+        });
+}
+#[test]
 fn state_cache_headroom_default() {
     CommandLineTest::new()
         .run_with_zero_port()

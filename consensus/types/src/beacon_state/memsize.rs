@@ -99,6 +99,18 @@ impl<E: EthSpec> MemorySize for BeaconState<E> {
                 );
             }
         }
+
+        if let Ok(current_sc) = self.current_sync_committee() {
+            subtrees.push(&**current_sc);
+        }
+        if let Ok(next_sc) = self.next_sync_committee() {
+            subtrees.push(&**next_sc);
+        }
+
+        for committee_cache in self.committee_caches() {
+            subtrees.push(&**committee_cache);
+        }
+        subtrees.push(self.epoch_cache() as &dyn MemorySize);
         subtrees
     }
 

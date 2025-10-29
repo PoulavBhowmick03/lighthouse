@@ -1,4 +1,5 @@
 use crate::{ActivationQueue, BeaconStateError, ChainSpec, Epoch, Hash256, Slot};
+use milhouse::mem::MemorySize;
 use safe_arith::{ArithError, SafeArith};
 use std::sync::Arc;
 
@@ -145,5 +146,47 @@ impl EpochCache {
             .as_ref()
             .ok_or(EpochCacheError::CacheNotInitialized)?;
         Ok(&inner.activation_queue)
+    }
+}
+
+impl MemorySize for EpochCache {
+    fn self_pointer(&self) -> usize {
+        self as *const _ as usize
+    }
+
+    fn subtrees(&self) -> Vec<&dyn MemorySize> {
+        let mut subtrees: Vec<&dyn MemorySize> = vec![];
+        if let Some(inner) = &self.inner {
+            subtrees.push(&**inner);
+        }
+        subtrees
+    }
+
+    fn intrinsic_size(&self) -> usize {
+        std::mem::size_of::<Self>()
+    }
+}
+
+impl MemorySize for Inner {
+    fn self_pointer(&self) -> usize {
+        self as *const _ as usize
+    }
+
+    fn subtrees(&self) -> Vec<&dyn MemorySize> {
+        vec![]
+        // For pushing the vectors, we need to implement MemorySize for Vec<u64> and ActivationQueue.
+        // Q: Do we need to do that, or is it sufficient to just account for their sizes in intrinsic_size()?
+        // let mut subtrees: Vec<&dyn MemorySize> = vec![];
+        // subtrees.push(&self.effective_balances);
+        // subtrees.push(&self.base_rewards);
+        // subtrees.push(&self.activation_queue);
+        // subtrees
+    }
+
+    #[allow(clippy::arithmetic_side_effects)]
+    fn intrinsic_size(&self) -> usize {
+        std::mem::size_of::<Self>()
+            + self.effective_balances.capacity() * std::mem::size_of::<u64>()
+            + self.base_rewards.capacity() * std::mem::size_of::<u64>()
     }
 }
