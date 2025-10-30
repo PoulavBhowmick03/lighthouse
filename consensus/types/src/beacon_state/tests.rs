@@ -6,11 +6,13 @@ use beacon_chain::types::{
     EthSpec, FixedBytesExtended, Hash256, Keypair, MainnetEthSpec, MinimalEthSpec, RelativeEpoch,
     Slot, Vector, test_utils::TestRandom,
 };
+use milhouse::mem::MemoryTracker;
 use ssz::Encode;
+use state_processing::epoch_cache::initialize_epoch_cache;
+use state_processing::per_slot_processing;
 use std::ops::Mul;
 use std::sync::LazyLock;
 use swap_or_not_shuffle::compute_shuffled_index;
-
 pub const MAX_VALIDATOR_COUNT: usize = 129;
 pub const SLOT_OFFSET: Slot = Slot::new(1);
 
@@ -365,4 +367,60 @@ fn decode_base_and_altair() {
         <BeaconState<MainnetEthSpec>>::from_ssz_bytes(&bad_altair_state.as_ssz_bytes(), &spec)
             .expect_err("bad altair state cannot be decoded");
     }
+}
+
+#[tokio::test]
+async fn committee_cache_memory_sharing() {
+    type E = MainnetEthSpec;
+    let harness = BeaconChainHarness::builder(E::default())
+        .default_spec()
+        .deterministic_keypairs(MAX_VALIDATOR_COUNT)
+        .fresh_ephemeral_store()
+        .build();
+
+    harness.extend_slots(E::slots_per_epoch() as usize).await;
+    let mut initial_state = harness.get_current_state();
+    initial_state
+        .build_all_committee_caches(&harness.spec)
+        .unwrap();
+    initialize_epoch_cache(&mut initial_state, &harness.spec).unwrap();
+
+    let initial_state = initial_state;
+
+    let mut final_state = initial_state.clone();
+    for _ in 0..E::slots_per_epoch() {
+        per_slot_processing(&mut final_state, None, &harness.spec).unwrap();
+    }
+    final_state
+        .build_all_committee_caches(&harness.spec)
+        .unwrap();
+    initialize_epoch_cache(&mut final_state, &harness.spec).unwrap();
+
+    let initial_caches = initial_state.committee_caches();
+    let final_caches = final_state.committee_caches();
+
+    let mut tracker = MemoryTracker::default();
+    for cache in initial_caches {
+        tracker.track_item(&**cache);
+    }
+    let before_bytes = tracker.total_size();
+
+    // only the next cache should add new bytes and old caches should be shared
+    let _ = tracker.track_item(&*final_caches[0]);
+    let _ = tracker.track_item(&*final_caches[1]);
+    let still_initial_caches = tracker.total_size();
+    assert_eq!(before_bytes, still_initial_caches);
+
+    // to track if the after_bytes is equal to the sum of previous + new total
+    let new_total = tracker.track_item(&*final_caches[2]).total_size;
+    let after_bytes = tracker.total_size();
+    assert_eq!(after_bytes, before_bytes.saturating_add(new_total));
+    assert!(after_bytes > before_bytes);
+
+    // epoch cache counted via MemorySize
+    let mut epoch_cache_tracker = MemoryTracker::default();
+    epoch_cache_tracker.track_item(initial_state.epoch_cache());
+    let initial_epoch_size = epoch_cache_tracker.total_size();
+    epoch_cache_tracker.track_item(final_state.epoch_cache());
+    assert!(epoch_cache_tracker.total_size() > initial_epoch_size);
 }

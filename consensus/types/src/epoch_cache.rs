@@ -174,13 +174,6 @@ impl MemorySize for Inner {
 
     fn subtrees(&self) -> Vec<&dyn MemorySize> {
         vec![]
-        // For pushing the vectors, we need to implement MemorySize for Vec<u64> and ActivationQueue.
-        // Q: Do we need to do that, or is it sufficient to just account for their sizes in intrinsic_size()?
-        // let mut subtrees: Vec<&dyn MemorySize> = vec![];
-        // subtrees.push(&self.effective_balances);
-        // subtrees.push(&self.base_rewards);
-        // subtrees.push(&self.activation_queue);
-        // subtrees
     }
 
     #[allow(clippy::arithmetic_side_effects)]

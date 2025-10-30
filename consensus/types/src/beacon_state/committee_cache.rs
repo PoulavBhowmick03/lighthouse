@@ -445,4 +445,3 @@ impl milhouse::mem::MemorySize for CommitteeCache {
             + self.shuffling_positions.capacity() * std::mem::size_of::<NonZeroUsizeOption>()
     }
 }
-
