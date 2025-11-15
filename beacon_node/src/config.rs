@@ -366,7 +366,7 @@ pub fn get_config<E: EthSpec>(
     }
 
     if let Some(max_mb) = clap_utils::parse_optional::<usize>(cli_args, "state-cache-max-mb")? {
-        client_config.store.state_cache_max_bytes = max_mb * 1024 * 1024;
+        client_config.store.state_cache_max_bytes = Some(max_mb * 1024 * 1024);
     }
 
     if let Some(historic_state_cache_size) =

@@ -381,8 +381,7 @@ Options:
           Minimum number of states to cull from the state cache when it gets
           full [default: 1]
       --state-cache-max-mb <MEGABYTES>
-          Specifies the maximum size of the state cache in megabytes [default:
-          4096]
+          Specifies the maximum size of the state cache in megabytes. Disabled by default.
       --state-cache-size <STATE_CACHE_SIZE>
           Specifies the maximum number of states in the state cache [default:
           128]

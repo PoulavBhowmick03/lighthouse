@@ -1887,7 +1887,7 @@ fn state_cache_max_bytes_flag() {
         .flag("state-cache-max-mb", Some("1024"))
         .run_with_zero_port()
         .with_config(|config| {
-            assert_eq!(config.store.state_cache_max_bytes, MB * 1024 * 1024);
+            assert_eq!(config.store.state_cache_max_bytes, Some(MB * 1024 * 1024));
         });
 }
 #[test]

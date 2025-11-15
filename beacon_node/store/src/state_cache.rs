@@ -52,7 +52,7 @@ pub struct StateCache<E: EthSpec> {
     max_epoch: Epoch,
     head_block_root: Hash256,
     headroom: NonZeroUsize,
-    max_cached_bytes: usize,
+    max_cached_bytes: Option<usize>,
     put_count: usize,
 }
 
@@ -91,7 +91,7 @@ impl<E: EthSpec> StateCache<E> {
         state_capacity: NonZeroUsize,
         headroom: NonZeroUsize,
         hdiff_capacity: NonZeroUsize,
-        max_cached_bytes: usize,
+        max_cached_bytes: Option<usize>,
     ) -> Self {
         StateCache {
             finalized_state: None,
@@ -106,7 +106,7 @@ impl<E: EthSpec> StateCache<E> {
         }
     }
 
-    pub fn max_cached_bytes(&self) -> usize {
+    pub fn max_cached_bytes(&self) -> Option<usize> {
         self.max_cached_bytes
     }
 
@@ -271,7 +271,7 @@ impl<E: EthSpec> StateCache<E> {
         self.block_map.insert(block_root, slot, state_root);
         self.put_count += 1;
 
-        if self.put_count >= RECOMPUTE_INTERVAL {
+        if self.max_cached_bytes().is_some() && self.put_count >= RECOMPUTE_INTERVAL {
             self.recompute_cached_bytes();
             self.put_count = 0;
         }
@@ -438,16 +438,19 @@ impl<E: EthSpec> StateCache<E> {
     }
 
     pub fn recompute_cached_bytes(&mut self) {
+        let Some(byte_limit) = self.max_cached_bytes else {
+            return;
+        };
         let states_limit = self.capacity();
         let mut total_bytes = self.measure_cached_memory_size();
         let mut num_states = self.len();
 
-        if total_bytes <= self.max_cached_bytes && num_states <= states_limit {
+        if total_bytes <= byte_limit && num_states <= states_limit {
             return;
         }
 
         let mut passes: usize = 0;
-        while (total_bytes > self.max_cached_bytes || num_states > states_limit)
+        while (total_bytes > byte_limit || num_states > states_limit)
             && num_states > 1
             && passes < MAX_RECOMPUTE_CULL_PASSES
         {
@@ -477,10 +480,10 @@ impl<E: EthSpec> StateCache<E> {
             passes += 1;
         }
 
-        if total_bytes > self.max_cached_bytes || num_states > states_limit {
+        if total_bytes > byte_limit || num_states > states_limit {
             tracing::debug!(
                 total_bytes,
-                byte_limit = self.max_cached_bytes,
+                byte_limit,
                 num_states,
                 states_limit,
                 passes,
@@ -610,7 +613,7 @@ mod tests {
     use types::{Eth1Data, MinimalEthSpec};
 
     #[allow(dead_code)]
-    fn new_cache(max_cached_bytes: usize) -> StateCache<MinimalEthSpec> {
+    fn new_cache(max_cached_bytes: Option<usize>) -> StateCache<MinimalEthSpec> {
         StateCache::new(
             NonZeroUsize::new(8).unwrap(),
             NonZeroUsize::new(2).unwrap(),
@@ -642,7 +645,7 @@ mod tests {
     fn recompute_with_high_limit() {
         type E = MinimalEthSpec;
         let spec = E::default_spec();
-        let mut cache = new_cache(usize::MAX);
+        let mut cache = new_cache(Some(usize::MAX));
         let mut inserted_roots = vec![];
 
         for i in 0..3 {
@@ -666,7 +669,7 @@ mod tests {
     fn recompute_cached_bytes_byte_limit() {
         type E = MinimalEthSpec;
         let spec = E::default_spec();
-        let mut cache = new_cache(usize::MAX);
+        let mut cache = new_cache(Some(usize::MAX));
 
         let head_block_root = hash(180);
         let head_state = build_state(Slot::new(120), false, &spec);
@@ -690,13 +693,13 @@ mod tests {
         assert!(cache.len() > 1);
         assert!(cache.measure_cached_memory_size() > single_state_bytes);
 
-        cache.max_cached_bytes = single_state_bytes;
+        cache.max_cached_bytes = Some(single_state_bytes);
         let initial_len = cache.len();
         cache.recompute_cached_bytes();
 
         let total_bytes = cache.measure_cached_memory_size();
 
-        assert!(total_bytes <= cache.max_cached_bytes());
+        assert!(total_bytes <= cache.max_cached_bytes().unwrap());
         assert!(cache.len() < initial_len);
         assert!(cache.len() >= 1);
     }
@@ -706,8 +709,8 @@ mod tests {
         type E = MinimalEthSpec;
         let spec = E::default_spec();
         let initial_limit = 1024 * 1024;
-        let mut cache = new_cache(initial_limit);
-        assert_eq!(cache.max_cached_bytes(), initial_limit);
+        let mut cache = new_cache(Some(initial_limit));
+        assert_eq!(cache.max_cached_bytes(), Some(initial_limit));
 
         let primary_root = hash(210);
         let primary_block_root = hash(220);
@@ -727,12 +730,12 @@ mod tests {
             .unwrap();
         assert!(cache.measure_cached_memory_size() > single_bytes);
 
-        cache.max_cached_bytes = single_bytes;
-        assert_eq!(cache.max_cached_bytes(), single_bytes);
+        cache.max_cached_bytes = Some(single_bytes);
+        assert_eq!(cache.max_cached_bytes(), Some(single_bytes));
         cache.recompute_cached_bytes();
 
         let total_bytes = cache.measure_cached_memory_size();
-        assert!(total_bytes <= cache.max_cached_bytes());
+        assert!(total_bytes <= cache.max_cached_bytes().unwrap());
         assert!(cache.len() <= 1);
     }
 
@@ -744,7 +747,7 @@ mod tests {
             NonZeroUsize::new(128).unwrap(),
             NonZeroUsize::new(64).unwrap(),
             NonZeroUsize::new(2).unwrap(),
-            1,
+            Some(1),
         );
 
         for i in 0..120u8 {
@@ -764,6 +767,6 @@ mod tests {
         let final_len = cache.len();
         let removed = initial_len.saturating_sub(final_len);
         assert!(removed > 0);
-        assert!(cache.measure_cached_memory_size() > cache.max_cached_bytes());
+        assert!(cache.measure_cached_memory_size() > cache.max_cached_bytes().unwrap());
     }
 }
