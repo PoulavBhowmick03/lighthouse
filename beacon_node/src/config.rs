@@ -819,6 +819,8 @@ pub fn get_config<E: EthSpec>(
         client_config.store.prune_blobs = false;
     }
 
+    client_config.chain.enable_unsafe_sync = cli_args.get_flag("enable-unsafe-sync");
+
     // Backfill sync rate-limiting
     client_config.beacon_processor.enable_backfill_rate_limiting =
         !cli_args.get_flag("disable-backfill-rate-limiting");

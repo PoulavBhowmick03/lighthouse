@@ -1246,6 +1246,17 @@ pub fn cli_app() -> Command {
                 .display_order(0)
         )
         .arg(
+            Arg::new("enable-unsafe-sync")
+                .long("enable-unsafe-sync")
+                .help("Allow syncing from a head outside the Data Availability (DA) window. \
+                       Use this flag if your node has been offline for more than ~18 days and \
+                       you want to continue syncing WITHOUT independently verifying historical \
+                       blob availability.")
+                .action(ArgAction::SetTrue)
+                .help_heading(FLAG_HEADER)
+                .display_order(0)
+        )
+        .arg(
             Arg::new("reconstruct-historic-states")
                 .long("reconstruct-historic-states")
                 .help("After a checkpoint sync, reconstruct historic states in the database. This requires syncing all the way back to genesis.")

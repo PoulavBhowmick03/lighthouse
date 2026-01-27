@@ -847,6 +847,43 @@ where
             ));
         }
 
+        // Check if head is outside the Data Availability Window (unless unsafe sync is enabled).
+        if !self.chain_config.enable_unsafe_sync {
+            if let Some(current_slot) = slot_clock.now() {
+                let current_epoch = current_slot.epoch(E::slots_per_epoch());
+                let head_epoch = head_snapshot
+                    .beacon_block
+                    .slot()
+                    .epoch(E::slots_per_epoch());
+
+                if let Some(da_boundary) = self
+                    .spec
+                    .min_epoch_data_availability_boundary(current_epoch)
+                {
+                    if head_epoch < da_boundary {
+                        crit!(
+                            head_epoch = %head_epoch,
+                            da_boundary = %da_boundary,
+                            head_slot = %head_snapshot.beacon_block.slot(),
+                            "Head is outside the Data Availability window!"
+                        );
+                        crit!(
+                            "Your node's head is from before the DA window (~18 days). \
+                             Lighthouse cannot independently verify blob availability for historical blocks. \
+                             Options: \
+                             1. Use checkpoint sync: --checkpoint-sync-url <URL> \
+                             2. Use --enable-unsafe-sync to bypass this check"
+                        );
+                        return Err(format!(
+                            "Head epoch {} is before DA boundary epoch {}. \
+                             Use --enable-unsafe-sync to bypass.",
+                            head_epoch, da_boundary
+                        ));
+                    }
+                }
+            }
+        }
+
         let validator_pubkey_cache = self
             .validator_pubkey_cache
             .map(|mut validator_pubkey_cache| {

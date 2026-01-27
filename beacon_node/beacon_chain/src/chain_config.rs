@@ -121,6 +121,8 @@ pub struct ChainConfig {
     pub disable_get_blobs: bool,
     /// The node's custody type, determining how many data columns to custody and sample.
     pub node_custody_type: NodeCustodyType,
+    /// Allow syncing from a head outside the Data Availability window.
+    pub enable_unsafe_sync: bool,
 }
 
 impl Default for ChainConfig {
@@ -162,6 +164,7 @@ impl Default for ChainConfig {
             invalid_block_roots: HashSet::new(),
             disable_get_blobs: false,
             node_custody_type: NodeCustodyType::Fullnode,
+            enable_unsafe_sync: false,
         }
     }
 }
