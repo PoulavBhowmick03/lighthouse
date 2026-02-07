@@ -212,6 +212,14 @@ fn fork_choice_before_proposal_timeout_zero() {
 }
 
 #[test]
+fn enable_unsafe_sync_flag() {
+    CommandLineTest::new()
+        .flag("enable-unsafe-sync", None)
+        .run_with_zero_port()
+        .with_config(|config| assert!(config.chain.enable_unsafe_sync));
+}
+
+#[test]
 fn checkpoint_sync_url_timeout_flag() {
     CommandLineTest::new()
         .flag("checkpoint-sync-url-timeout", Some("300"))
