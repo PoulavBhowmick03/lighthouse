@@ -869,15 +869,14 @@ where
                             "Head is outside the Data Availability window!"
                         );
                         crit!(
-                            "Your node's head is from before the DA window (~18 days). \
+                            "Your node's head is outside the DA window (~18 days). \
                              Lighthouse cannot independently verify blob availability for historical blocks. \
                              Options: \
                              1. Use checkpoint sync: --checkpoint-sync-url <URL> \
                              2. Use --enable-unsafe-sync to bypass this check"
                         );
                         return Err(format!(
-                            "Head epoch {} is before DA boundary epoch {}. \
-                             Use --enable-unsafe-sync to bypass.",
+                            "Head epoch {} is before DA boundary epoch {}.",
                             head_epoch, da_boundary
                         ));
                     }
