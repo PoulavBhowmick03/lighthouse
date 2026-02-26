@@ -6,7 +6,7 @@ use crate::utils::{
     AnyVersionFilter, ChainFilter, EthV1Filter, NetworkTxFilter, NotWhileSyncingFilter,
     ResponseFilter, TaskSpawnerFilter, ValidatorSubscriptionTxFilter, publish_network_message,
 };
-use crate::version::V3;
+use crate::version::{V3, add_ssz_content_type_header};
 use crate::{StateId, attester_duties, proposer_duties, sync_committees};
 use beacon_chain::attestation_verification::VerifiedAttestation;
 use beacon_chain::validator_monitor::timestamp_now;
@@ -21,6 +21,7 @@ use lighthouse_network::PubsubMessage;
 use network::{NetworkMessage, ValidatorSubscriptionMessage};
 use reqwest::StatusCode;
 use slot_clock::SlotClock;
+use ssz::Encode;
 use std::sync::Arc;
 use tokio::sync::mpsc::{Sender, UnboundedSender};
 use tokio::sync::oneshot;
@@ -30,6 +31,8 @@ use types::{
     SignedContributionAndProof, SignedValidatorRegistrationData, Slot, SyncContributionData,
     ValidatorSubscription,
 };
+use warp::http::Response;
+use warp::hyper::Body;
 use warp::{Filter, Rejection, Reply};
 use warp_utils::reject::convert_rejection;
 
@@ -184,12 +187,14 @@ pub fn get_validator_aggregate_attestation<T: BeaconChainTypes>(
         .and(not_while_syncing_filter.clone())
         .and(task_spawner_filter.clone())
         .and(chain_filter.clone())
+        .and(warp::header::optional::<Accept>("accept"))
         .then(
             |endpoint_version: EndpointVersion,
              query: ValidatorAggregateAttestationQuery,
              not_synced_filter: Result<(), Rejection>,
              task_spawner: TaskSpawner<T::EthSpec>,
-             chain: Arc<BeaconChain<T>>| {
+             chain: Arc<BeaconChain<T>>,
+             accept_header: Option<Accept>| {
                 task_spawner.blocking_response_task(Priority::P0, move || {
                     not_synced_filter?;
                     crate::aggregate_attestation::get_aggregate_attestation(
@@ -198,6 +203,7 @@ pub fn get_validator_aggregate_attestation<T: BeaconChainTypes>(
                         query.committee_index,
                         endpoint_version,
                         chain,
+                        accept_header,
                     )
                 })
             },
@@ -220,12 +226,14 @@ pub fn get_validator_attestation_data<T: BeaconChainTypes>(
         .and(not_while_syncing_filter.clone())
         .and(task_spawner_filter.clone())
         .and(chain_filter.clone())
+        .and(warp::header::optional::<Accept>("accept"))
         .then(
             |query: ValidatorAttestationDataQuery,
              not_synced_filter: Result<(), Rejection>,
              task_spawner: TaskSpawner<T::EthSpec>,
-             chain: Arc<BeaconChain<T>>| {
-                task_spawner.blocking_json_task(Priority::P0, move || {
+             chain: Arc<BeaconChain<T>>,
+             accept_header: Option<Accept>| {
+                task_spawner.blocking_response_task(Priority::P0, move || {
                     not_synced_filter?;
 
                     let current_slot = chain.slot().map_err(warp_utils::reject::unhandled_error)?;
@@ -238,11 +246,26 @@ pub fn get_validator_attestation_data<T: BeaconChainTypes>(
                         )));
                     }
 
-                    chain
+                    // capture the attestation data first
+                    let attestation_data = chain
                         .produce_unaggregated_attestation(query.slot, query.committee_index)
                         .map(|attestation| attestation.data().clone())
-                        .map(GenericResponse::from)
-                        .map_err(warp_utils::reject::unhandled_error)
+                        .map_err(warp_utils::reject::unhandled_error)?;
+
+                    match accept_header {
+                        Some(Accept::Ssz) => Response::builder()
+                            .status(200)
+                            .body(attestation_data.as_ssz_bytes().into())
+                            .map(|res: Response<Body>| add_ssz_content_type_header(res))
+                            .map_err(|e| {
+                                warp_utils::reject::custom_server_error(format!(
+                                    "failed to create response: {}",
+                                    e
+                                ))
+                            }),
+                        _ => Ok(warp::reply::json(&GenericResponse::from(attestation_data))
+                            .into_response()),
+                    }
                 })
             },
         )
