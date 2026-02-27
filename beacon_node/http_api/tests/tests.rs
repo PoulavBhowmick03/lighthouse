@@ -37,7 +37,7 @@ use proto_array::ExecutionStatus;
 use reqwest::{RequestBuilder, Response, StatusCode};
 use sensitive_url::SensitiveUrl;
 use slot_clock::SlotClock;
-use ssz::BitList;
+use ssz::{BitList, Decode, Encode};
 use state_processing::per_block_processing::get_expected_withdrawals;
 use state_processing::per_slot_processing;
 use state_processing::state_advance::partial_state_advance;
@@ -1341,6 +1341,59 @@ impl ApiTester {
         self
     }
 
+    pub async fn test_beacon_states_pending_deposits_ssz(self) -> Self {
+        for state_id in self.interesting_state_ids() {
+            let mut state_opt = state_id
+                .state(&self.chain)
+                .ok()
+                .map(|(state, _execution_optimistic, _finalized)| state);
+
+            // Construct the URL for SSZ request
+            let mut url = self.client.server().expose_full().clone();
+            url.path_segments_mut()
+                .expect("valid URL")
+                .push("eth")
+                .push("v1")
+                .push("beacon")
+                .push("states")
+                .push(&state_id.0.to_string())
+                .push("pending_deposits");
+
+            let ssz_response = self
+                .client
+                .get_response(url, |b| b.accept(Accept::Ssz))
+                .await
+                .optional()
+                .unwrap();
+
+            if ssz_response.is_none() && state_opt.is_none() {
+                continue;
+            }
+
+            let state = state_opt.as_mut().expect("state should exist");
+            let expected = state.pending_deposits().unwrap();
+
+            let response = ssz_response.expect("response should exist");
+
+            // Check that the version header is returned
+            let fork_name = state.fork_name(&self.chain.spec).unwrap();
+            assert_eq!(
+                response.fork_name_from_header().unwrap(),
+                Some(fork_name),
+                "{:?}",
+                state_id
+            );
+
+            // Decode SSZ and compare
+            let bytes = response.bytes().await.unwrap();
+            let decoded =
+                Vec::<types::PendingDeposit>::from_ssz_bytes(&bytes).expect("valid SSZ bytes");
+            assert_eq!(decoded, expected.to_vec(), "{:?}", state_id);
+        }
+
+        self
+    }
+
     pub async fn test_beacon_states_pending_partial_withdrawals(self) -> Self {
         for state_id in self.interesting_state_ids() {
             let mut state_opt = state_id
@@ -1375,6 +1428,59 @@ impl ApiTester {
         self
     }
 
+    pub async fn test_beacon_states_pending_partial_withdrawals_ssz(self) -> Self {
+        for state_id in self.interesting_state_ids() {
+            let mut state_opt = state_id
+                .state(&self.chain)
+                .ok()
+                .map(|(state, _execution_optimistic, _finalized)| state);
+
+            // Construct the URL for SSZ request
+            let mut url = self.client.server().expose_full().clone();
+            url.path_segments_mut()
+                .expect("valid URL")
+                .push("eth")
+                .push("v1")
+                .push("beacon")
+                .push("states")
+                .push(&state_id.0.to_string())
+                .push("pending_partial_withdrawals");
+
+            let ssz_response = self
+                .client
+                .get_response(url, |b| b.accept(Accept::Ssz))
+                .await
+                .optional()
+                .unwrap();
+
+            if ssz_response.is_none() && state_opt.is_none() {
+                continue;
+            }
+
+            let state = state_opt.as_mut().expect("state should exist");
+            let expected = state.pending_partial_withdrawals().unwrap();
+
+            let response = ssz_response.expect("response should exist");
+
+            // Check that the version header is returned
+            let fork_name = state.fork_name(&self.chain.spec).unwrap();
+            assert_eq!(
+                response.fork_name_from_header().unwrap(),
+                Some(fork_name),
+                "{:?}",
+                state_id
+            );
+
+            // Decode SSZ and compare
+            let bytes = response.bytes().await.unwrap();
+            let decoded = Vec::<types::PendingPartialWithdrawal>::from_ssz_bytes(&bytes)
+                .expect("valid SSZ bytes");
+            assert_eq!(decoded, expected.to_vec(), "{:?}", state_id);
+        }
+
+        self
+    }
+
     pub async fn test_beacon_states_pending_consolidations(self) -> Self {
         for state_id in self.interesting_state_ids() {
             let mut state_opt = state_id
@@ -1404,6 +1510,59 @@ impl ApiTester {
             // Check that the version header is returned in the response
             let fork_name = state.fork_name(&self.chain.spec).unwrap();
             assert_eq!(response.version(), Some(fork_name),);
+        }
+
+        self
+    }
+
+    pub async fn test_beacon_states_pending_consolidations_ssz(self) -> Self {
+        for state_id in self.interesting_state_ids() {
+            let mut state_opt = state_id
+                .state(&self.chain)
+                .ok()
+                .map(|(state, _execution_optimistic, _finalized)| state);
+
+            // Construct the URL for SSZ request
+            let mut url = self.client.server().expose_full().clone();
+            url.path_segments_mut()
+                .expect("valid URL")
+                .push("eth")
+                .push("v1")
+                .push("beacon")
+                .push("states")
+                .push(&state_id.0.to_string())
+                .push("pending_consolidations");
+
+            let ssz_response = self
+                .client
+                .get_response(url, |b| b.accept(Accept::Ssz))
+                .await
+                .optional()
+                .unwrap();
+
+            if ssz_response.is_none() && state_opt.is_none() {
+                continue;
+            }
+
+            let state = state_opt.as_mut().expect("state should exist");
+            let expected = state.pending_consolidations().unwrap();
+
+            let response = ssz_response.expect("response should exist");
+
+            // Check that the version header is returned
+            let fork_name = state.fork_name(&self.chain.spec).unwrap();
+            assert_eq!(
+                response.fork_name_from_header().unwrap(),
+                Some(fork_name),
+                "{:?}",
+                state_id
+            );
+
+            // Decode SSZ and compare
+            let bytes = response.bytes().await.unwrap();
+            let decoded = Vec::<types::PendingConsolidation>::from_ssz_bytes(&bytes)
+                .expect("valid SSZ bytes");
+            assert_eq!(decoded, expected.to_vec(), "{:?}", state_id);
         }
 
         self
@@ -4329,6 +4488,59 @@ impl ApiTester {
             let expected = attestation;
 
             assert_eq!(result, expected);
+        }
+        self
+    }
+
+    pub async fn test_get_validator_aggregate_attestation_v2_ssz(self) -> Self {
+        let attestations = self
+            .chain
+            .naive_aggregation_pool
+            .read()
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>();
+
+        for attestation in attestations {
+            let slot = attestation.data().slot;
+            let attestation_data_root = attestation.data().tree_hash_root();
+            let committee_index = attestation.committee_index().expect("committee index");
+
+            // Construct the URL for SSZ request
+            let mut url = self.client.server().expose_full().clone();
+            url.path_segments_mut()
+                .expect("valid URL")
+                .push("eth")
+                .push("v2")
+                .push("validator")
+                .push("aggregate_attestation");
+            url.query_pairs_mut()
+                .append_pair("slot", &slot.to_string())
+                .append_pair(
+                    "attestation_data_root",
+                    &format!("{:?}", attestation_data_root),
+                )
+                .append_pair("committee_index", &committee_index.to_string());
+
+            let ssz_response = self
+                .client
+                .get_response(url, |b| b.accept(Accept::Ssz))
+                .await
+                .optional()
+                .unwrap()
+                .expect("response should exist");
+
+            // Check that the version header is returned
+            let fork_name = self.chain.spec.fork_name_at_slot::<E>(slot);
+            assert_eq!(
+                ssz_response.fork_name_from_header().unwrap(),
+                Some(fork_name)
+            );
+
+            // Compare SSZ bytes
+            let bytes = ssz_response.bytes().await.unwrap();
+            let expected_bytes = attestation.as_ssz_bytes();
+            assert_eq!(bytes.as_ref(), expected_bytes.as_slice());
         }
         self
     }
@@ -7280,9 +7492,15 @@ async fn beacon_get_state_info_electra() {
         .await
         .test_beacon_states_pending_deposits()
         .await
+        .test_beacon_states_pending_deposits_ssz()
+        .await
         .test_beacon_states_pending_partial_withdrawals()
         .await
+        .test_beacon_states_pending_partial_withdrawals_ssz()
+        .await
         .test_beacon_states_pending_consolidations()
+        .await
+        .test_beacon_states_pending_consolidations_ssz()
         .await;
 }
 
@@ -7798,6 +8016,14 @@ async fn get_validator_aggregate_attestation_v2() {
     ApiTester::new()
         .await
         .test_get_validator_aggregate_attestation_v2()
+        .await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn get_validator_aggregate_attestation_v2_ssz() {
+    ApiTester::new()
+        .await
+        .test_get_validator_aggregate_attestation_v2_ssz()
         .await;
 }
 
