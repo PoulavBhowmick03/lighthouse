@@ -1056,6 +1056,83 @@ impl ApiTester {
         self
     }
 
+    pub async fn test_beacon_states_validator_identities_ssz(self) -> Self {
+        for state_id in self.interesting_state_ids() {
+            for validator_indices in self.interesting_validator_indices() {
+                let state_opt = state_id.state(&self.chain).ok();
+
+                let validator_index_ids: Vec<ValidatorId> = validator_indices
+                    .iter()
+                    .cloned()
+                    .map(ValidatorId::Index)
+                    .collect();
+
+                // Construct the URL for SSZ request
+                let mut url = self.client.server().expose_full().clone();
+                url.path_segments_mut()
+                    .expect("valid URL")
+                    .push("eth")
+                    .push("v1")
+                    .push("beacon")
+                    .push("states")
+                    .push(&state_id.0.to_string())
+                    .push("validator_identities");
+
+                let body = ValidatorIdentitiesRequestBody {
+                    ids: validator_index_ids,
+                };
+
+                let ssz_response = self
+                    .client
+                    .post_response(url, &body, |b| b.accept(Accept::Ssz))
+                    .await
+                    .optional()
+                    .unwrap();
+
+                if ssz_response.is_none() && state_opt.is_none() {
+                    continue;
+                }
+
+                let response = ssz_response.expect("response should exist");
+                let bytes = response.bytes().await.unwrap();
+                let result =
+                    Vec::<ValidatorIdentityData>::from_ssz_bytes(&bytes).expect("valid SSZ bytes");
+
+                let expected: Vec<ValidatorIdentityData> = {
+                    let (state, _, _) = state_opt.as_ref().expect("state should exist");
+                    if validator_indices.is_empty() {
+                        state
+                            .validators()
+                            .iter()
+                            .enumerate()
+                            .map(|(index, validator)| ValidatorIdentityData {
+                                index: index as u64,
+                                pubkey: validator.pubkey,
+                                activation_epoch: validator.activation_epoch,
+                            })
+                            .collect()
+                    } else {
+                        let mut validators = Vec::with_capacity(validator_indices.len());
+                        for i in validator_indices {
+                            if i < state.validators().len() as u64 {
+                                let validator = state.validators().get(i as usize).unwrap();
+                                validators.push(ValidatorIdentityData {
+                                    index: i,
+                                    pubkey: validator.pubkey,
+                                    activation_epoch: validator.activation_epoch,
+                                });
+                            }
+                        }
+                        validators
+                    }
+                };
+
+                assert_eq!(result, expected, "{:?}", state_id);
+            }
+        }
+        self
+    }
+
     pub async fn test_beacon_states_validators(self) -> Self {
         for state_id in self.interesting_state_ids() {
             for statuses in self.interesting_validator_statuses() {
@@ -4437,6 +4514,50 @@ impl ApiTester {
         self
     }
 
+    pub async fn test_get_validator_attestation_data_ssz(self) -> Self {
+        let mut state = self.chain.head_beacon_state_cloned();
+        let slot = state.slot();
+        state
+            .build_committee_cache(RelativeEpoch::Current, &self.chain.spec)
+            .unwrap();
+        for index in 0..state.get_committee_count_at_slot(slot).unwrap() {
+            // Construct the URL for SSZ request
+            let mut url = self.client.server().expose_full().clone();
+            url.path_segments_mut()
+                .expect("valid URL")
+                .push("eth")
+                .push("v1")
+                .push("validator")
+                .push("attestation_data");
+            url.query_pairs_mut()
+                .append_pair("slot", &slot.to_string())
+                .append_pair("committee_index", &index.to_string());
+
+            let ssz_response = self
+                .client
+                .get_response(url, |b| b.accept(Accept::Ssz))
+                .await
+                .optional()
+                .unwrap()
+                .expect("response should exist");
+
+            let bytes = ssz_response.bytes().await.unwrap();
+
+            let result = AttestationData::from_ssz_bytes(&bytes).unwrap();
+
+            let expected = self
+                .chain
+                .produce_unaggregated_attestation(slot, index)
+                .unwrap()
+                .data()
+                .clone();
+
+            assert_eq!(result, expected);
+        }
+
+        self
+    }
+
     #[allow(clippy::await_holding_lock)] // This is a test, so it should be fine.
     pub async fn test_get_validator_aggregate_attestation_v1(self) -> Self {
         let attestation = self
@@ -7472,6 +7593,8 @@ async fn beacon_get_state_info() {
         .await
         .test_beacon_states_validator_identities()
         .await
+        .test_beacon_states_validator_identities_ssz()
+        .await
         .test_beacon_states_committees()
         .await
         .test_beacon_states_validator_id()
@@ -7991,6 +8114,14 @@ async fn get_validator_attestation_data() {
     ApiTester::new()
         .await
         .test_get_validator_attestation_data()
+        .await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn get_validator_attestation_data_ssz() {
+    ApiTester::new()
+        .await
+        .test_get_validator_attestation_data_ssz()
         .await;
 }
 

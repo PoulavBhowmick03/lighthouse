@@ -323,7 +323,7 @@ pub struct ValidatorBalanceData {
     pub balance: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ssz_derive::Encode)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Encode, Decode)]
 pub struct ValidatorIdentityData {
     #[serde(with = "serde_utils::quoted_u64")]
     pub index: u64,

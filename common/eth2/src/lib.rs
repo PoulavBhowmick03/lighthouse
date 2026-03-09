@@ -218,6 +218,24 @@ impl BeaconNodeHttpClient {
         ok_or_error(response).await
     }
 
+    /// Perform an HTTP POST request, returning the `Response` for processing.
+    pub async fn post_response<T: Serialize, U: IntoUrl>(
+        &self,
+        url: U,
+        body: &T,
+        builder: impl FnOnce(RequestBuilder) -> RequestBuilder,
+    ) -> Result<Response, Error> {
+        let response = builder(
+            self.client
+                .post(url)
+                .json(body)
+                .timeout(self.timeouts.default),
+        )
+        .send()
+        .await?;
+        ok_or_error(response).await
+    }
+
     /// Perform a HTTP GET request with a custom timeout.
     async fn get_with_timeout<T: DeserializeOwned, U: IntoUrl>(
         &self,
