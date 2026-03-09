@@ -63,7 +63,6 @@ pub fn get_beacon_state_pending_consolidations<T: BeaconChainTypes>(
                             .status(200)
                             .body(data.as_ssz_bytes().into())
                             .map(|res: Response<Body>| add_ssz_content_type_header(res))
-                            .map(|resp| add_consensus_version_header(resp, fork_name))
                             .map_err(|e| {
                                 warp_utils::reject::custom_server_error(format!(
                                     "failed to create response: {}",
@@ -76,9 +75,9 @@ pub fn get_beacon_state_pending_consolidations<T: BeaconChainTypes>(
                             finalized,
                             data,
                         )
-                        .map(|res| warp::reply::json(&res).into_response())
-                        .map(|resp| add_consensus_version_header(resp, fork_name)),
+                        .map(|res| warp::reply::json(&res).into_response()),
                     }
+                    .map(|resp| add_consensus_version_header(resp, fork_name))
                 })
             },
         )
@@ -124,7 +123,6 @@ pub fn get_beacon_state_pending_partial_withdrawals<T: BeaconChainTypes>(
                             .status(200)
                             .body(data.as_ssz_bytes().into())
                             .map(|res: Response<Body>| add_ssz_content_type_header(res))
-                            .map(|resp| add_consensus_version_header(resp, fork_name))
                             .map_err(|e| {
                                 warp_utils::reject::custom_server_error(format!(
                                     "failed to create response: {}",
@@ -137,9 +135,9 @@ pub fn get_beacon_state_pending_partial_withdrawals<T: BeaconChainTypes>(
                             finalized,
                             data,
                         )
-                        .map(|res| warp::reply::json(&res).into_response())
-                        .map(|resp| add_consensus_version_header(resp, fork_name)),
+                        .map(|res| warp::reply::json(&res).into_response()),
                     }
+                    .map(|resp| add_consensus_version_header(resp, fork_name))
                 })
             },
         )
@@ -184,7 +182,6 @@ pub fn get_beacon_state_pending_deposits<T: BeaconChainTypes>(
                             .status(200)
                             .body(data.as_ssz_bytes().into())
                             .map(|res: Response<Body>| add_ssz_content_type_header(res))
-                            .map(|resp| add_consensus_version_header(resp, fork_name))
                             .map_err(|e| {
                                 warp_utils::reject::custom_server_error(format!(
                                     "failed to create response: {}",
@@ -197,9 +194,9 @@ pub fn get_beacon_state_pending_deposits<T: BeaconChainTypes>(
                             finalized,
                             data,
                         )
-                        .map(|res| warp::reply::json(&res).into_response())
-                        .map(|resp| add_consensus_version_header(resp, fork_name)),
+                        .map(|res| warp::reply::json(&res).into_response()),
                     }
+                    .map(|resp| add_consensus_version_header(resp, fork_name))
                 })
             },
         )
