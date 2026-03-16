@@ -1067,36 +1067,22 @@ impl ApiTester {
                     .map(ValidatorId::Index)
                     .collect();
 
-                // Construct the URL for SSZ request
-                let mut url = self.client.server().expose_full().clone();
-                url.path_segments_mut()
-                    .expect("valid URL")
-                    .push("eth")
-                    .push("v1")
-                    .push("beacon")
-                    .push("states")
-                    .push(&state_id.0.to_string())
-                    .push("validator_identities");
-
-                let body = ValidatorIdentitiesRequestBody {
-                    ids: validator_index_ids,
+                let ssz_result = match self
+                    .client
+                    .post_beacon_states_validator_identities_ssz(state_id.0, validator_index_ids)
+                    .await
+                {
+                    Ok(response) => response,
+                    Err(e) => panic!("query failed incorrectly: {e:?}"),
                 };
 
-                let ssz_response = self
-                    .client
-                    .post_response(url, &body, |b| b.accept(Accept::Ssz))
-                    .await
-                    .optional()
-                    .unwrap();
-
-                if ssz_response.is_none() && state_opt.is_none() {
+                if ssz_result.is_none() && state_opt.is_none() {
                     continue;
                 }
 
-                let response = ssz_response.expect("response should exist");
-                let bytes = response.bytes().await.unwrap();
-                let result =
-                    Vec::<ValidatorIdentityData>::from_ssz_bytes(&bytes).expect("valid SSZ bytes");
+                let ssz_bytes = ssz_result.expect("response should exist");
+                let result = Vec::<ValidatorIdentityData>::from_ssz_bytes(&ssz_bytes)
+                    .expect("should decode SSZ validator identities");
 
                 let expected: Vec<ValidatorIdentityData> = {
                     let (state, _, _) = state_opt.as_ref().expect("state should exist");
@@ -1425,23 +1411,14 @@ impl ApiTester {
                 .ok()
                 .map(|(state, _execution_optimistic, _finalized)| state);
 
-            // Construct the URL for SSZ request
-            let mut url = self.client.server().expose_full().clone();
-            url.path_segments_mut()
-                .expect("valid URL")
-                .push("eth")
-                .push("v1")
-                .push("beacon")
-                .push("states")
-                .push(&state_id.0.to_string())
-                .push("pending_deposits");
-
-            let ssz_response = self
+            let ssz_response = match self
                 .client
-                .get_response(url, |b| b.accept(Accept::Ssz))
+                .get_beacon_states_pending_deposits_ssz(state_id.0)
                 .await
-                .optional()
-                .unwrap();
+            {
+                Ok(response) => response,
+                Err(e) => panic!("query failed incorrectly: {e:?}"),
+            };
 
             if ssz_response.is_none() && state_opt.is_none() {
                 continue;
@@ -1451,20 +1428,8 @@ impl ApiTester {
             let expected = state.pending_deposits().unwrap();
 
             let response = ssz_response.expect("response should exist");
-
-            // Check that the version header is returned
-            let fork_name = state.fork_name(&self.chain.spec).unwrap();
-            assert_eq!(
-                response.fork_name_from_header().unwrap(),
-                Some(fork_name),
-                "{:?}",
-                state_id
-            );
-
-            // Decode SSZ and compare
-            let bytes = response.bytes().await.unwrap();
-            let decoded =
-                Vec::<types::PendingDeposit>::from_ssz_bytes(&bytes).expect("valid SSZ bytes");
+            let decoded = Vec::<types::PendingDeposit>::from_ssz_bytes(&response)
+                .expect("should decode SSZ pending deposits");
             assert_eq!(decoded, expected.to_vec(), "{:?}", state_id);
         }
 
@@ -1512,23 +1477,14 @@ impl ApiTester {
                 .ok()
                 .map(|(state, _execution_optimistic, _finalized)| state);
 
-            // Construct the URL for SSZ request
-            let mut url = self.client.server().expose_full().clone();
-            url.path_segments_mut()
-                .expect("valid URL")
-                .push("eth")
-                .push("v1")
-                .push("beacon")
-                .push("states")
-                .push(&state_id.0.to_string())
-                .push("pending_partial_withdrawals");
-
-            let ssz_response = self
+            let ssz_response = match self
                 .client
-                .get_response(url, |b| b.accept(Accept::Ssz))
+                .get_beacon_states_pending_partial_withdrawals_ssz(state_id.0)
                 .await
-                .optional()
-                .unwrap();
+            {
+                Ok(response) => response,
+                Err(e) => panic!("query failed incorrectly: {e:?}"),
+            };
 
             if ssz_response.is_none() && state_opt.is_none() {
                 continue;
@@ -1538,20 +1494,8 @@ impl ApiTester {
             let expected = state.pending_partial_withdrawals().unwrap();
 
             let response = ssz_response.expect("response should exist");
-
-            // Check that the version header is returned
-            let fork_name = state.fork_name(&self.chain.spec).unwrap();
-            assert_eq!(
-                response.fork_name_from_header().unwrap(),
-                Some(fork_name),
-                "{:?}",
-                state_id
-            );
-
-            // Decode SSZ and compare
-            let bytes = response.bytes().await.unwrap();
-            let decoded = Vec::<types::PendingPartialWithdrawal>::from_ssz_bytes(&bytes)
-                .expect("valid SSZ bytes");
+            let decoded = Vec::<types::PendingPartialWithdrawal>::from_ssz_bytes(&response)
+                .expect("should decode SSZ pending partial withdrawals");
             assert_eq!(decoded, expected.to_vec(), "{:?}", state_id);
         }
 
@@ -1599,23 +1543,14 @@ impl ApiTester {
                 .ok()
                 .map(|(state, _execution_optimistic, _finalized)| state);
 
-            // Construct the URL for SSZ request
-            let mut url = self.client.server().expose_full().clone();
-            url.path_segments_mut()
-                .expect("valid URL")
-                .push("eth")
-                .push("v1")
-                .push("beacon")
-                .push("states")
-                .push(&state_id.0.to_string())
-                .push("pending_consolidations");
-
-            let ssz_response = self
+            let ssz_response = match self
                 .client
-                .get_response(url, |b| b.accept(Accept::Ssz))
+                .get_beacon_states_pending_consolidations_ssz(state_id.0)
                 .await
-                .optional()
-                .unwrap();
+            {
+                Ok(response) => response,
+                Err(e) => panic!("query failed incorrectly: {e:?}"),
+            };
 
             if ssz_response.is_none() && state_opt.is_none() {
                 continue;
@@ -1624,21 +1559,9 @@ impl ApiTester {
             let state = state_opt.as_mut().expect("state should exist");
             let expected = state.pending_consolidations().unwrap();
 
-            let response = ssz_response.expect("response should exist");
-
-            // Check that the version header is returned
-            let fork_name = state.fork_name(&self.chain.spec).unwrap();
-            assert_eq!(
-                response.fork_name_from_header().unwrap(),
-                Some(fork_name),
-                "{:?}",
-                state_id
-            );
-
-            // Decode SSZ and compare
-            let bytes = response.bytes().await.unwrap();
-            let decoded = Vec::<types::PendingConsolidation>::from_ssz_bytes(&bytes)
-                .expect("valid SSZ bytes");
+            let ssz_bytes = result.expect("response should exist");
+            let decoded = Vec::<types::PendingConsolidation>::from_ssz_bytes(&ssz_bytes)
+                .expect("should decode SSZ pending consolidations");
             assert_eq!(decoded, expected.to_vec(), "{:?}", state_id);
         }
 

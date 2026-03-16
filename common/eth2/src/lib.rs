@@ -218,24 +218,6 @@ impl BeaconNodeHttpClient {
         ok_or_error(response).await
     }
 
-    /// Perform an HTTP POST request, returning the `Response` for processing.
-    pub async fn post_response<T: Serialize, U: IntoUrl>(
-        &self,
-        url: U,
-        body: &T,
-        builder: impl FnOnce(RequestBuilder) -> RequestBuilder,
-    ) -> Result<Response, Error> {
-        let response = builder(
-            self.client
-                .post(url)
-                .json(body)
-                .timeout(self.timeouts.default),
-        )
-        .send()
-        .await?;
-        ok_or_error(response).await
-    }
-
     /// Perform a HTTP GET request with a custom timeout.
     async fn get_with_timeout<T: DeserializeOwned, U: IntoUrl>(
         &self,
@@ -335,6 +317,29 @@ impl BeaconNodeHttpClient {
             .get_response(url, |b| b.accept(accept_header).timeout(timeout))
             .await
             .optional()?;
+        match opt_response {
+            Some(resp) => Ok(Some(resp.bytes().await?.into_iter().collect::<Vec<_>>())),
+            None => Ok(None),
+        }
+    }
+
+    /// Perform a HTTP POST request using an 'accept' header, returning `None` on a 404 error.
+    pub async fn post_bytes_opt_accept_header<T: Serialize, U: IntoUrl>(
+        &self,
+        url: U,
+        body: &T,
+        accept_header: Accept,
+        timeout: Duration,
+    ) -> Result<Option<Vec<u8>>, Error> {
+        let response = self
+            .client
+            .post(url)
+            .json(body)
+            .accept(accept_header)
+            .timeout(timeout)
+            .send()
+            .await?;
+        let opt_response = ok_or_error(response).await.optional()?;
         match opt_response {
             Some(resp) => Ok(Some(resp.bytes().await?.into_iter().collect::<Vec<_>>())),
             None => Ok(None),
@@ -682,6 +687,29 @@ impl BeaconNodeHttpClient {
         self.post_with_opt_response(path, &request).await
     }
 
+    /// `POST beacon/states/{state_id}/validator_identities`
+    ///
+    ///  Returns `Ok(None)` on a 404 error.
+    pub async fn post_beacon_states_validator_identities_ssz(
+        &self,
+        state_id: StateId,
+        ids: Vec<ValidatorId>,
+    ) -> Result<Option<Vec<u8>>, Error> {
+        let mut path = self.eth_path(V1)?;
+
+        path.path_segments_mut()
+            .map_err(|()| Error::InvalidUrl(self.server.clone()))?
+            .push("beacon")
+            .push("states")
+            .push(&state_id.to_string())
+            .push("validator_identities");
+
+        let request = ValidatorIdentitiesRequestBody { ids };
+
+        self.post_bytes_opt_accept_header(path, &request, Accept::Ssz, self.timeouts.default)
+            .await
+    }
+
     /// `GET beacon/states/{state_id}/validators?id,status`
     ///
     /// Returns `Ok(None)` on a 404 error.
@@ -870,6 +898,26 @@ impl BeaconNodeHttpClient {
             .map(|opt| opt.map(BeaconResponse::ForkVersioned))
     }
 
+    /// `GET beacon/states/{state_id}/pending_deposits`
+    ///
+    /// Returns `Ok(None)` on a 404 error.
+    pub async fn get_beacon_states_pending_deposits_ssz(
+        &self,
+        state_id: StateId,
+    ) -> Result<Option<Vec<u8>>, Error> {
+        let mut path = self.eth_path(V1)?;
+
+        path.path_segments_mut()
+            .map_err(|()| Error::InvalidUrl(self.server.clone()))?
+            .push("beacon")
+            .push("states")
+            .push(&state_id.to_string())
+            .push("pending_deposits");
+
+        self.get_bytes_opt_accept_header(path, Accept::Ssz, self.timeouts.default)
+            .await
+    }
+
     /// `GET beacon/states/{state_id}/pending_partial_withdrawals`
     ///
     /// Returns `Ok(None)` on a 404 error.
@@ -894,6 +942,26 @@ impl BeaconNodeHttpClient {
             .map(|opt| opt.map(BeaconResponse::ForkVersioned))
     }
 
+    /// `GET beacon/states/{state_id}/pending_partial_withdrawals`
+    ///
+    /// Returns `Ok(None)` on a 404 error.
+    pub async fn get_beacon_states_pending_partial_withdrawals_ssz(
+        &self,
+        state_id: StateId,
+    ) -> Result<Option<Vec<u8>>, Error> {
+        let mut path = self.eth_path(V1)?;
+
+        path.path_segments_mut()
+            .map_err(|()| Error::InvalidUrl(self.server.clone()))?
+            .push("beacon")
+            .push("states")
+            .push(&state_id.to_string())
+            .push("pending_partial_withdrawals");
+
+        self.get_bytes_opt_accept_header(path, Accept::Ssz, self.timeouts.default)
+            .await
+    }
+
     /// `GET beacon/states/{state_id}/pending_consolidations`
     ///
     /// Returns `Ok(None)` on a 404 error.
@@ -914,6 +982,26 @@ impl BeaconNodeHttpClient {
         self.get_fork_contextual(path, |fork| fork)
             .await
             .map(|opt| opt.map(BeaconResponse::ForkVersioned))
+    }
+
+    /// `GET beacon/states/{state_id}/pending_consolidations`
+    ///
+    /// Returns `Ok(None)` on a 404 error.
+    pub async fn get_beacon_states_pending_consolidations_ssz(
+        &self,
+        state_id: StateId,
+    ) -> Result<Option<Vec<u8>>, Error> {
+        let mut path = self.eth_path(V1)?;
+
+        path.path_segments_mut()
+            .map_err(|()| Error::InvalidUrl(self.server.clone()))?
+            .push("beacon")
+            .push("states")
+            .push(&state_id.to_string())
+            .push("pending_consolidations");
+
+        self.get_bytes_opt_accept_header(path, Accept::Ssz, self.timeouts.default)
+            .await
     }
 
     /// `GET beacon/states/{state_id}/proposer_lookahead`
