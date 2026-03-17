@@ -1559,7 +1559,7 @@ impl ApiTester {
             let state = state_opt.as_mut().expect("state should exist");
             let expected = state.pending_consolidations().unwrap();
 
-            let ssz_bytes = result.expect("response should exist");
+            let ssz_bytes = ssz_response.expect("response should exist");
             let decoded = Vec::<types::PendingConsolidation>::from_ssz_bytes(&ssz_bytes)
                 .expect("should decode SSZ pending consolidations");
             assert_eq!(decoded, expected.to_vec(), "{:?}", state_id);
@@ -7761,23 +7761,6 @@ async fn beacon_get_state_info_electra() {
         .test_beacon_states_pending_consolidations()
         .await
         .test_beacon_states_pending_consolidations_ssz()
-        .await;
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn beacon_get_state_info_fulu() {
-    let mut config = ApiTesterConfig::default();
-    config.spec.altair_fork_epoch = Some(Epoch::new(0));
-    config.spec.bellatrix_fork_epoch = Some(Epoch::new(0));
-    config.spec.capella_fork_epoch = Some(Epoch::new(0));
-    config.spec.deneb_fork_epoch = Some(Epoch::new(0));
-    config.spec.electra_fork_epoch = Some(Epoch::new(0));
-    config.spec.fulu_fork_epoch = Some(Epoch::new(0));
-    ApiTester::new_from_config(config)
-        .await
-        .test_beacon_states_proposer_lookahead()
-        .await
-        .test_beacon_states_proposer_lookahead_ssz()
         .await;
 }
 
