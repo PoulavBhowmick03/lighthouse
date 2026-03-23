@@ -5337,7 +5337,7 @@ dependencies = [
  "thiserror 2.0.17",
  "tracing",
  "yamux 0.12.1",
- "yamux 0.13.8",
+ "yamux 0.13.10",
 ]
 
 [[package]]
@@ -10606,8 +10606,9 @@ dependencies = [
 
 [[package]]
 name = "yamux"
-version = "0.13.8"
-source = "git+https://github.com/sigp/rust-yamux?rev=29efa6aebd4bdfcb16bfb21969ec0c785e570b74#29efa6aebd4bdfcb16bfb21969ec0c785e570b74"
+version = "0.13.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1991f6690292030e31b0144d73f5e8368936c58e45e7068254f7138b23b00672"
 dependencies = [
  "futures",
  "log",
