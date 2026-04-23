@@ -46,6 +46,7 @@ use ssz::{Decode, Encode};
 use std::fmt;
 use std::future::Future;
 use std::time::Duration;
+use types::PayloadAttestationData;
 
 pub const V1: EndpointVersion = EndpointVersion(1);
 pub const V2: EndpointVersion = EndpointVersion(2);
@@ -73,10 +74,13 @@ const HTTP_PROPOSER_DUTIES_TIMEOUT_QUOTIENT: u32 = 4;
 const HTTP_SYNC_COMMITTEE_CONTRIBUTION_TIMEOUT_QUOTIENT: u32 = 4;
 const HTTP_SYNC_DUTIES_TIMEOUT_QUOTIENT: u32 = 4;
 const HTTP_SYNC_AGGREGATOR_TIMEOUT_QUOTIENT: u32 = 24; // For DVT involving middleware only
+// TODO(EIP-7732): Determine what this quotient should be
+const HTTP_PTC_DUTIES_TIMEOUT_QUOTIENT: u32 = 4;
 const HTTP_GET_BEACON_BLOCK_SSZ_TIMEOUT_QUOTIENT: u32 = 4;
 const HTTP_GET_DEBUG_BEACON_STATE_QUOTIENT: u32 = 4;
 const HTTP_GET_DEPOSIT_SNAPSHOT_QUOTIENT: u32 = 4;
 const HTTP_GET_VALIDATOR_BLOCK_TIMEOUT_QUOTIENT: u32 = 4;
+const HTTP_PAYLOAD_ATTESTATION_TIMEOUT_QUOTIENT: u32 = 4;
 const HTTP_DEFAULT_TIMEOUT_QUOTIENT: u32 = 4;
 
 /// A struct to define a variety of different timeouts for different validator tasks to ensure
@@ -93,10 +97,12 @@ pub struct Timeouts {
     pub sync_committee_contribution: Duration,
     pub sync_duties: Duration,
     pub sync_aggregators: Duration,
+    pub ptc_duties: Duration,
     pub get_beacon_blocks_ssz: Duration,
     pub get_debug_beacon_states: Duration,
     pub get_deposit_snapshot: Duration,
     pub get_validator_block: Duration,
+    pub payload_attestation: Duration,
     pub default: Duration,
 }
 
@@ -113,10 +119,12 @@ impl Timeouts {
             sync_committee_contribution: timeout,
             sync_duties: timeout,
             sync_aggregators: timeout,
+            ptc_duties: timeout,
             get_beacon_blocks_ssz: timeout,
             get_debug_beacon_states: timeout,
             get_deposit_snapshot: timeout,
             get_validator_block: timeout,
+            payload_attestation: timeout,
             default: timeout,
         }
     }
@@ -135,10 +143,12 @@ impl Timeouts {
                 / HTTP_SYNC_COMMITTEE_CONTRIBUTION_TIMEOUT_QUOTIENT,
             sync_duties: base_timeout / HTTP_SYNC_DUTIES_TIMEOUT_QUOTIENT,
             sync_aggregators: base_timeout / HTTP_SYNC_AGGREGATOR_TIMEOUT_QUOTIENT,
+            ptc_duties: base_timeout / HTTP_PTC_DUTIES_TIMEOUT_QUOTIENT,
             get_beacon_blocks_ssz: base_timeout / HTTP_GET_BEACON_BLOCK_SSZ_TIMEOUT_QUOTIENT,
             get_debug_beacon_states: base_timeout / HTTP_GET_DEBUG_BEACON_STATE_QUOTIENT,
             get_deposit_snapshot: base_timeout / HTTP_GET_DEPOSIT_SNAPSHOT_QUOTIENT,
             get_validator_block: base_timeout / HTTP_GET_VALIDATOR_BLOCK_TIMEOUT_QUOTIENT,
+            payload_attestation: base_timeout / HTTP_PAYLOAD_ATTESTATION_TIMEOUT_QUOTIENT,
             default: base_timeout / HTTP_DEFAULT_TIMEOUT_QUOTIENT,
         }
     }
@@ -986,11 +996,11 @@ impl BeaconNodeHttpClient {
 
     /// `GET beacon/states/{state_id}/pending_consolidations`
     ///
-    /// Returns `Ok(None)` on a 404 error.
+    /// Returns `Ok(None)` on a 404 error. Returns `(bytes, fork_name)` on success.
     pub async fn get_beacon_states_pending_consolidations_ssz(
         &self,
         state_id: StateId,
-    ) -> Result<Option<Vec<u8>>, Error> {
+    ) -> Result<Option<(Vec<u8>, Option<ForkName>)>, Error> {
         let mut path = self.eth_path(V1)?;
 
         path.path_segments_mut()
@@ -1000,8 +1010,20 @@ impl BeaconNodeHttpClient {
             .push(&state_id.to_string())
             .push("pending_consolidations");
 
-        self.get_bytes_opt_accept_header(path, Accept::Ssz, self.timeouts.default)
-            .await
+        self.get_response_with_response_headers(
+            path,
+            Accept::Ssz,
+            self.timeouts.default,
+            |response, headers| async move {
+                let fork_name = headers
+                    .get(CONSENSUS_VERSION_HEADER)
+                    .and_then(|v| v.to_str().ok())
+                    .and_then(|s| s.parse::<ForkName>().ok());
+                let bytes = response.bytes().await?.into_iter().collect::<Vec<_>>();
+                Ok((bytes, fork_name))
+            },
+        )
+        .await
     }
 
     /// `GET beacon/states/{state_id}/proposer_lookahead`
@@ -2838,6 +2860,55 @@ impl BeaconNodeHttpClient {
         Ok(())
     }
 
+    /// Path for `v1/beacon/execution_payload_envelope/{block_id}`
+    pub fn get_beacon_execution_payload_envelope_path(
+        &self,
+        block_id: BlockId,
+    ) -> Result<Url, Error> {
+        let mut path = self.eth_path(V1)?;
+        path.path_segments_mut()
+            .map_err(|()| Error::InvalidUrl(self.server.clone()))?
+            .push("beacon")
+            .push("execution_payload_envelope")
+            .push(&block_id.to_string());
+        Ok(path)
+    }
+
+    /// `GET v1/beacon/execution_payload_envelope/{block_id}`
+    ///
+    /// Returns `Ok(None)` on a 404 error.
+    pub async fn get_beacon_execution_payload_envelope<E: EthSpec>(
+        &self,
+        block_id: BlockId,
+    ) -> Result<
+        Option<ExecutionOptimisticFinalizedBeaconResponse<SignedExecutionPayloadEnvelope<E>>>,
+        Error,
+    > {
+        let path = self.get_beacon_execution_payload_envelope_path(block_id)?;
+        self.get_opt(path)
+            .await
+            .map(|opt| opt.map(BeaconResponse::ForkVersioned))
+    }
+
+    /// `GET v1/beacon/execution_payload_envelope/{block_id}` in SSZ format
+    ///
+    /// Returns `Ok(None)` on a 404 error.
+    pub async fn get_beacon_execution_payload_envelope_ssz<E: EthSpec>(
+        &self,
+        block_id: BlockId,
+    ) -> Result<Option<SignedExecutionPayloadEnvelope<E>>, Error> {
+        let path = self.get_beacon_execution_payload_envelope_path(block_id)?;
+        let opt_response = self
+            .get_bytes_opt_accept_header(path, Accept::Ssz, self.timeouts.get_beacon_blocks_ssz)
+            .await?;
+        match opt_response {
+            Some(bytes) => SignedExecutionPayloadEnvelope::from_ssz_bytes(&bytes)
+                .map(Some)
+                .map_err(Error::InvalidSsz),
+            None => Ok(None),
+        }
+    }
+
     /// `GET v2/validator/blocks/{slot}` in ssz format
     pub async fn get_validator_blocks_ssz<E: EthSpec>(
         &self,
@@ -2994,6 +3065,72 @@ impl BeaconNodeHttpClient {
         self.get_with_timeout(path, self.timeouts.attestation).await
     }
 
+    /// `GET v1/validator/attestation_data?slot,committee_index` in SSZ format
+    pub async fn get_validator_attestation_data_ssz(
+        &self,
+        slot: Slot,
+        committee_index: CommitteeIndex,
+    ) -> Result<AttestationData, Error> {
+        let mut path = self.eth_path(V1)?;
+
+        path.path_segments_mut()
+            .map_err(|()| Error::InvalidUrl(self.server.clone()))?
+            .push("validator")
+            .push("attestation_data");
+
+        path.query_pairs_mut()
+            .append_pair("slot", &slot.to_string())
+            .append_pair("committee_index", &committee_index.to_string());
+
+        let opt_response = self
+            .get_bytes_opt_accept_header(path, Accept::Ssz, self.timeouts.attestation)
+            .await?;
+
+        let response_bytes = opt_response.ok_or(Error::StatusCode(StatusCode::NOT_FOUND))?;
+
+        AttestationData::from_ssz_bytes(&response_bytes).map_err(Error::InvalidSsz)
+    }
+
+    /// `GET validator/payload_attestation_data/{slot}`
+    pub async fn get_validator_payload_attestation_data(
+        &self,
+        slot: Slot,
+    ) -> Result<BeaconResponse<PayloadAttestationData>, Error> {
+        let mut path = self.eth_path(V1)?;
+
+        path.path_segments_mut()
+            .map_err(|()| Error::InvalidUrl(self.server.clone()))?
+            .push("validator")
+            .push("payload_attestation_data")
+            .push(&slot.to_string());
+
+        self.get_with_timeout(path, self.timeouts.payload_attestation)
+            .await
+            .map(BeaconResponse::ForkVersioned)
+    }
+
+    /// `GET validator/payload_attestation_data/{slot}` in SSZ format
+    pub async fn get_validator_payload_attestation_data_ssz(
+        &self,
+        slot: Slot,
+    ) -> Result<PayloadAttestationData, Error> {
+        let mut path = self.eth_path(V1)?;
+
+        path.path_segments_mut()
+            .map_err(|()| Error::InvalidUrl(self.server.clone()))?
+            .push("validator")
+            .push("payload_attestation_data")
+            .push(&slot.to_string());
+
+        let opt_response = self
+            .get_bytes_opt_accept_header(path, Accept::Ssz, self.timeouts.payload_attestation)
+            .await?;
+
+        let response_bytes = opt_response.ok_or(Error::StatusCode(StatusCode::NOT_FOUND))?;
+
+        PayloadAttestationData::from_ssz_bytes(&response_bytes).map_err(Error::InvalidSsz)
+    }
+
     /// `GET v1/validator/aggregate_attestation?slot,attestation_data_root`
     pub async fn get_validator_aggregate_attestation_v1<E: EthSpec>(
         &self,
@@ -3043,6 +3180,51 @@ impl BeaconNodeHttpClient {
         self.get_opt_with_timeout(path, self.timeouts.attestation)
             .await
             .map(|opt| opt.map(BeaconResponse::ForkVersioned))
+    }
+
+    /// `GET v2/validator/aggregate_attestation?slot,attestation_data_root,committee_index` in SSZ format
+    ///
+    /// Returns `Ok(None)` on a 404 error. Returns `(bytes, fork_name)` on success.
+    pub async fn get_validator_aggregate_attestation_v2_ssz(
+        &self,
+        slot: Slot,
+        attestation_data_root: Hash256,
+        committee_index: CommitteeIndex,
+    ) -> Result<Option<(Vec<u8>, ForkName)>, Error> {
+        let mut path = self.eth_path(V2)?;
+
+        path.path_segments_mut()
+            .map_err(|()| Error::InvalidUrl(self.server.clone()))?
+            .push("validator")
+            .push("aggregate_attestation");
+
+        path.query_pairs_mut()
+            .append_pair("slot", &slot.to_string())
+            .append_pair(
+                "attestation_data_root",
+                &format!("{:?}", attestation_data_root),
+            )
+            .append_pair("committee_index", &committee_index.to_string());
+
+        self.get_response_with_response_headers(
+            path,
+            Accept::Ssz,
+            self.timeouts.attestation,
+            |response, headers| async move {
+                let fork_name = headers
+                    .get(CONSENSUS_VERSION_HEADER)
+                    .and_then(|v| v.to_str().ok())
+                    .and_then(|s| s.parse::<ForkName>().ok())
+                    .ok_or_else(|| {
+                        Error::InvalidHeaders(
+                            "missing or invalid Eth-Consensus-Version header".into(),
+                        )
+                    })?;
+                let bytes = response.bytes().await?.into_iter().collect::<Vec<_>>();
+                Ok((bytes, fork_name))
+            },
+        )
+        .await
     }
 
     /// `GET validator/sync_committee_contribution`
@@ -3330,5 +3512,30 @@ impl BeaconNodeHttpClient {
 
         self.post_with_timeout_and_response(path, &selections, self.timeouts.sync_aggregators)
             .await
+    }
+
+    // TODO(EIP-7732): Create corresponding beacon node response endpoint per spec
+    // https://github.com/ethereum/beacon-APIs/pull/552
+    /// `POST validator/duties/ptc/{epoch}`
+    pub async fn post_validator_duties_ptc(
+        &self,
+        epoch: Epoch,
+        indices: &[u64],
+    ) -> Result<DutiesResponse<Vec<PtcDuty>>, Error> {
+        let mut path = self.eth_path(V1)?;
+
+        path.path_segments_mut()
+            .map_err(|()| Error::InvalidUrl(self.server.clone()))?
+            .push("validator")
+            .push("duties")
+            .push("ptc")
+            .push(&epoch.to_string());
+
+        self.post_with_timeout_and_response(
+            path,
+            &ValidatorIndexDataRef(indices),
+            self.timeouts.ptc_duties,
+        )
+        .await
     }
 }
