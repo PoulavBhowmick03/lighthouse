@@ -303,6 +303,7 @@ async fn test_rewards_base_slashings() {
     check_all_base_rewards(&harness, initial_balances).await;
 }
 
+#[allow(clippy::large_stack_frames)]
 #[tokio::test]
 async fn test_rewards_base_multi_inclusion() {
     let spec = ForkName::Base.make_genesis_spec(E::default_spec());
@@ -845,14 +846,13 @@ async fn check_all_base_rewards_for_subset(
                 .state_at_slot(Slot::new(slot - 1), StateSkipConfig::WithoutStateRoots)
                 .unwrap();
 
-            // TODO(gloas): handle payloads?
             let mut pre_state = BlockReplayer::<E, BlockReplayError, IntoIter<_, 0>>::new(
                 parent_state,
                 &harness.spec,
             )
             .no_signature_verification()
             .minimal_block_root_verification()
-            .apply_blocks(vec![], vec![], Some(block.slot()))
+            .apply_blocks(vec![], Some(block.slot()))
             .unwrap()
             .into_state();
 

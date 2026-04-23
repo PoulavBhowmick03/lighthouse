@@ -3,7 +3,8 @@ use beacon_chain::test_utils::RelativeSyncCommittee;
 use beacon_chain::{
     BeaconChain, ChainConfig, StateSkipConfig, WhenSlotSkipped,
     test_utils::{
-        AttestationStrategy, BeaconChainHarness, BlockStrategy, EphemeralHarnessType, test_spec,
+        AttestationStrategy, BeaconChainHarness, BlockStrategy, EphemeralHarnessType,
+        fork_name_from_env, test_spec,
     },
 };
 use bls::{AggregateSignature, Keypair, PublicKeyBytes, SecretKey, Signature, SignatureBytes};
@@ -33,7 +34,7 @@ use lighthouse_network::{Enr, PeerId, types::SyncState};
 use network::NetworkReceivers;
 use network_utils::enr_ext::EnrExt;
 use operation_pool::attestation_storage::CheckpointKey;
-use proto_array::ExecutionStatus;
+use proto_array::{ExecutionStatus, core::ProtoNode};
 use reqwest::{RequestBuilder, Response, StatusCode};
 use sensitive_url::SensitiveUrl;
 use slot_clock::SlotClock;
@@ -1559,7 +1560,11 @@ impl ApiTester {
             let state = state_opt.as_mut().expect("state should exist");
             let expected = state.pending_consolidations().unwrap();
 
-            let ssz_bytes = ssz_response.expect("response should exist");
+            let (ssz_bytes, fork_name) = ssz_response.expect("response should exist");
+
+            let expected_fork = state.fork_name(&self.chain.spec).unwrap();
+            assert_eq!(fork_name, Some(expected_fork), "{:?}", state_id);
+
             let decoded = Vec::<types::PendingConsolidation>::from_ssz_bytes(&ssz_bytes)
                 .expect("should decode SSZ pending consolidations");
             assert_eq!(decoded, expected.to_vec(), "{:?}", state_id);
@@ -3289,51 +3294,65 @@ impl ApiTester {
             .nodes
             .iter()
             .map(|node| {
-                let execution_status = if node.execution_status.is_execution_enabled() {
-                    Some(node.execution_status.to_string())
+                let execution_status = if node
+                    .execution_status()
+                    .is_ok_and(|status| status.is_execution_enabled())
+                {
+                    node.execution_status()
+                        .ok()
+                        .map(|status| status.to_string())
                 } else {
                     None
                 };
                 ForkChoiceNode {
-                    slot: node.slot,
-                    block_root: node.root,
+                    slot: node.slot(),
+                    block_root: node.root(),
                     parent_root: node
-                        .parent
+                        .parent()
                         .and_then(|index| expected_proto_array.nodes.get(index))
-                        .map(|parent| parent.root),
-                    justified_epoch: node.justified_checkpoint.epoch,
-                    finalized_epoch: node.finalized_checkpoint.epoch,
-                    weight: node.weight,
+                        .map(|parent| parent.root()),
+                    justified_epoch: node.justified_checkpoint().epoch,
+                    finalized_epoch: node.finalized_checkpoint().epoch,
+                    weight: node.weight(),
                     validity: execution_status,
                     execution_block_hash: node
-                        .execution_status
-                        .block_hash()
+                        .execution_status()
+                        .ok()
+                        .and_then(|status| status.block_hash())
                         .map(|block_hash| block_hash.into_root()),
                     extra_data: ForkChoiceExtraData {
-                        target_root: node.target_root,
-                        justified_root: node.justified_checkpoint.root,
-                        finalized_root: node.finalized_checkpoint.root,
+                        target_root: node.target_root(),
+                        justified_root: node.justified_checkpoint().root,
+                        finalized_root: node.finalized_checkpoint().root,
                         unrealized_justified_root: node
-                            .unrealized_justified_checkpoint
+                            .unrealized_justified_checkpoint()
                             .map(|checkpoint| checkpoint.root),
                         unrealized_finalized_root: node
-                            .unrealized_finalized_checkpoint
+                            .unrealized_finalized_checkpoint()
                             .map(|checkpoint| checkpoint.root),
                         unrealized_justified_epoch: node
-                            .unrealized_justified_checkpoint
+                            .unrealized_justified_checkpoint()
                             .map(|checkpoint| checkpoint.epoch),
                         unrealized_finalized_epoch: node
-                            .unrealized_finalized_checkpoint
+                            .unrealized_finalized_checkpoint()
                             .map(|checkpoint| checkpoint.epoch),
-                        execution_status: node.execution_status.to_string(),
+                        execution_status: node
+                            .execution_status()
+                            .ok()
+                            .map(|status| status.to_string())
+                            .unwrap_or_else(|| "irrelevant".to_string()),
                         best_child: node
-                            .best_child
+                            .best_child()
+                            .ok()
+                            .flatten()
                             .and_then(|index| expected_proto_array.nodes.get(index))
-                            .map(|child| child.root),
+                            .map(|child| child.root()),
                         best_descendant: node
-                            .best_descendant
+                            .best_descendant()
+                            .ok()
+                            .flatten()
                             .and_then(|index| expected_proto_array.nodes.get(index))
-                            .map(|descendant| descendant.root),
+                            .map(|descendant| descendant.root()),
                     },
                 }
             })
@@ -3618,6 +3637,7 @@ impl ApiTester {
         self
     }
 
+    // TODO(EIP-7732): Add test_get_validator_duties_ptc function to test PTC duties endpoint
     pub async fn test_get_validator_duties_proposer_v2(self) -> Self {
         let current_epoch = self.chain.epoch().unwrap();
 
@@ -4080,7 +4100,7 @@ impl ApiTester {
             .cloned()
             .expect("envelope should exist in pending cache for local building");
         assert_eq!(envelope.beacon_block_root, block_root);
-        assert_eq!(envelope.slot, slot);
+        assert_eq!(envelope.slot(), slot);
     }
 
     /// Assert envelope fields match the expected block root and slot.
@@ -4091,9 +4111,8 @@ impl ApiTester {
         slot: Slot,
     ) {
         assert_eq!(envelope.beacon_block_root, block_root);
-        assert_eq!(envelope.slot, slot);
+        assert_eq!(envelope.slot(), slot);
         assert_eq!(envelope.builder_index, BUILDER_INDEX_SELF_BUILD);
-        assert_ne!(envelope.state_root, Hash256::ZERO);
     }
 
     /// Sign an execution payload envelope.
@@ -4585,29 +4604,11 @@ impl ApiTester {
             .build_committee_cache(RelativeEpoch::Current, &self.chain.spec)
             .unwrap();
         for index in 0..state.get_committee_count_at_slot(slot).unwrap() {
-            // Construct the URL for SSZ request
-            let mut url = self.client.server().expose_full().clone();
-            url.path_segments_mut()
-                .expect("valid URL")
-                .push("eth")
-                .push("v1")
-                .push("validator")
-                .push("attestation_data");
-            url.query_pairs_mut()
-                .append_pair("slot", &slot.to_string())
-                .append_pair("committee_index", &index.to_string());
-
-            let ssz_response = self
+            let result = self
                 .client
-                .get_response(url, |b| b.accept(Accept::Ssz))
+                .get_validator_attestation_data_ssz(slot, index)
                 .await
-                .optional()
-                .unwrap()
-                .expect("response should exist");
-
-            let bytes = ssz_response.bytes().await.unwrap();
-
-            let result = AttestationData::from_ssz_bytes(&bytes).unwrap();
+                .unwrap();
 
             let expected = self
                 .chain
@@ -4617,6 +4618,53 @@ impl ApiTester {
                 .clone();
 
             assert_eq!(result, expected);
+        }
+
+        self
+    }
+
+    pub async fn test_get_validator_payload_attestation_data(self) -> Self {
+        let slot = self.chain.slot().unwrap();
+        let fork_name = self.chain.spec.fork_name_at_slot::<E>(slot);
+
+        let response = self
+            .client
+            .get_validator_payload_attestation_data(slot)
+            .await
+            .unwrap();
+
+        assert_eq!(response.version(), Some(fork_name));
+
+        let result = response.into_data();
+        let expected = self.chain.produce_payload_attestation_data(slot).unwrap();
+
+        assert_eq!(result.beacon_block_root, expected.beacon_block_root);
+        assert_eq!(result.slot, expected.slot);
+        assert_eq!(result.payload_present, expected.payload_present);
+        assert_eq!(result.blob_data_available, expected.blob_data_available);
+
+        let ssz_result = self
+            .client
+            .get_validator_payload_attestation_data_ssz(slot)
+            .await
+            .unwrap();
+
+        assert_eq!(ssz_result, expected);
+
+        self
+    }
+
+    pub async fn test_get_validator_payload_attestation_data_pre_gloas(self) -> Self {
+        let slot = self.chain.slot().unwrap();
+
+        // The endpoint should return a 400 error for pre-Gloas forks
+        match self
+            .client
+            .get_validator_payload_attestation_data(slot)
+            .await
+        {
+            Ok(result) => panic!("query for pre-Gloas slot should fail, got: {result:?}"),
+            Err(e) => assert_eq!(e.status().unwrap(), 400),
         }
 
         self
@@ -4691,41 +4739,22 @@ impl ApiTester {
             let attestation_data_root = attestation.data().tree_hash_root();
             let committee_index = attestation.committee_index().expect("committee index");
 
-            // Construct the URL for SSZ request
-            let mut url = self.client.server().expose_full().clone();
-            url.path_segments_mut()
-                .expect("valid URL")
-                .push("eth")
-                .push("v2")
-                .push("validator")
-                .push("aggregate_attestation");
-            url.query_pairs_mut()
-                .append_pair("slot", &slot.to_string())
-                .append_pair(
-                    "attestation_data_root",
-                    &format!("{:?}", attestation_data_root),
-                )
-                .append_pair("committee_index", &committee_index.to_string());
-
-            let ssz_response = self
+            let (bytes, fork_name) = self
                 .client
-                .get_response(url, |b| b.accept(Accept::Ssz))
+                .get_validator_aggregate_attestation_v2_ssz(
+                    slot,
+                    attestation_data_root,
+                    committee_index,
+                )
                 .await
-                .optional()
                 .unwrap()
                 .expect("response should exist");
 
-            // Check that the version header is returned
-            let fork_name = self.chain.spec.fork_name_at_slot::<E>(slot);
-            assert_eq!(
-                ssz_response.fork_name_from_header().unwrap(),
-                Some(fork_name)
-            );
+            let expected_fork = self.chain.spec.fork_name_at_slot::<E>(slot);
+            assert_eq!(fork_name, expected_fork);
 
-            // Compare SSZ bytes
-            let bytes = ssz_response.bytes().await.unwrap();
             let expected_bytes = attestation.as_ssz_bytes();
-            assert_eq!(bytes.as_ref(), expected_bytes.as_slice());
+            assert_eq!(bytes.as_slice(), expected_bytes.as_slice());
         }
         self
     }
@@ -4987,7 +5016,7 @@ impl ApiTester {
             .beacon_state
             .validators()
             .into_iter()
-            .zip(fee_recipients.into_iter())
+            .zip(fee_recipients)
             .enumerate()
         {
             let actual_fee_recipient = self
@@ -5044,7 +5073,7 @@ impl ApiTester {
             .beacon_state
             .validators()
             .into_iter()
-            .zip(fee_recipients.into_iter())
+            .zip(fee_recipients)
             .enumerate()
         {
             let actual = self
@@ -5083,7 +5112,7 @@ impl ApiTester {
             .beacon_state
             .validators()
             .into_iter()
-            .zip(fee_recipients.into_iter())
+            .zip(fee_recipients)
             .enumerate()
         {
             let actual_fee_recipient = self
@@ -7436,6 +7465,7 @@ impl ApiTester {
             .core_proto_array_mut()
             .nodes
             .last_mut()
+            && let ProtoNode::V17(head_node) = head_node
         {
             head_node.execution_status = ExecutionStatus::Optimistic(ExecutionBlockHash::zero())
         }
@@ -7725,18 +7755,30 @@ async fn beacon_get_state_info() {
         .test_beacon_states_fork()
         .await
         .test_beacon_states_validators()
+        .await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn beacon_get_state_info_2() {
+    ApiTester::new()
         .await
         .test_beacon_states_validator_balances()
         .await
         .test_beacon_states_validator_identities()
-        .await
-        .test_beacon_states_validator_identities_ssz()
         .await
         .test_beacon_states_committees()
         .await
         .test_beacon_states_validator_id()
         .await
         .test_beacon_states_randao()
+        .await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn beacon_get_state_validator_identities_ssz() {
+    ApiTester::new()
+        .await
+        .test_beacon_states_validator_identities_ssz()
         .await;
 }
 
@@ -7794,6 +7836,12 @@ async fn beacon_get_blocks() {
         .test_beacon_headers_all_slots()
         .await
         .test_beacon_headers_all_parents()
+        .await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn beacon_get_blocks_2() {
+    ApiTester::new()
         .await
         .test_beacon_headers_block_id()
         .await
@@ -8310,6 +8358,30 @@ async fn get_validator_attestation_data_with_skip_slots() {
         .await
         .skip_slots(E::slots_per_epoch() * 2)
         .test_get_validator_attestation_data()
+        .await;
+}
+
+// TODO(EIP-7732): Remove `#[ignore]` once gloas beacon chain harness is implemented
+#[ignore]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn get_validator_payload_attestation_data() {
+    if !fork_name_from_env().is_some_and(|f| f.gloas_enabled()) {
+        return;
+    }
+    ApiTester::new()
+        .await
+        .test_get_validator_payload_attestation_data()
+        .await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn get_validator_payload_attestation_data_pre_gloas() {
+    if fork_name_from_env().is_some_and(|f| f.gloas_enabled()) {
+        return;
+    }
+    ApiTester::new()
+        .await
+        .test_get_validator_payload_attestation_data_pre_gloas()
         .await;
 }
 
