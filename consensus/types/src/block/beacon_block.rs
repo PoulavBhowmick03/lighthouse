@@ -15,6 +15,7 @@ use tree_hash_derive::TreeHash;
 use typenum::Unsigned;
 
 use crate::{
+    SignedExecutionPayloadBid,
     attestation::{AttestationBase, AttestationData, IndexedAttestationBase},
     block::{
         BeaconBlockBodyAltair, BeaconBlockBodyBase, BeaconBlockBodyBellatrix,
@@ -307,6 +308,26 @@ impl<'a, E: EthSpec, Payload: AbstractExecPayload<E>> BeaconBlockRef<'a, E, Payl
     /// is pre-merge.
     pub fn execution_payload(&self) -> Result<Payload::Ref<'a>, BeaconStateError> {
         self.body().execution_payload()
+    }
+
+    pub fn blob_kzg_commitments_len(&self) -> Option<usize> {
+        match self {
+            BeaconBlockRef::Base(_) => None,
+            BeaconBlockRef::Altair(_) => None,
+            BeaconBlockRef::Bellatrix(_) => None,
+            BeaconBlockRef::Capella(_) => None,
+            BeaconBlockRef::Deneb(block) => Some(block.body.blob_kzg_commitments.len()),
+            BeaconBlockRef::Electra(block) => Some(block.body.blob_kzg_commitments.len()),
+            BeaconBlockRef::Fulu(block) => Some(block.body.blob_kzg_commitments.len()),
+            BeaconBlockRef::Gloas(block) => Some(
+                block
+                    .body
+                    .signed_execution_payload_bid
+                    .message
+                    .blob_kzg_commitments
+                    .len(),
+            ),
+        }
     }
 }
 
@@ -694,11 +715,38 @@ impl<E: EthSpec, Payload: AbstractExecPayload<E>> EmptyBlock for BeaconBlockGloa
                 deposits: VariableList::empty(),
                 voluntary_exits: VariableList::empty(),
                 sync_aggregate: SyncAggregate::empty(),
-                execution_payload: Payload::Gloas::default(),
                 bls_to_execution_changes: VariableList::empty(),
-                blob_kzg_commitments: VariableList::empty(),
-                execution_requests: ExecutionRequests::default(),
+                parent_execution_requests: ExecutionRequests::default(),
+                signed_execution_payload_bid: SignedExecutionPayloadBid::empty(),
+                payload_attestations: VariableList::empty(),
+                _phantom: PhantomData,
             },
+        }
+    }
+}
+
+// TODO(EIP-7732) Mark's branch had the following implementation but not sure if it's needed so will just add header below for reference
+// impl<E: EthSpec, Payload: AbstractExecPayload<E>> BeaconBlockEIP7732<E, Payload> {
+
+// TODO(EIP-7732) Look into whether we can remove this in the future since no blinded blocks post-gloas
+impl<E: EthSpec> From<BeaconBlockGloas<E, BlindedPayload<E>>>
+    for BeaconBlockGloas<E, FullPayload<E>>
+{
+    fn from(block: BeaconBlockGloas<E, BlindedPayload<E>>) -> Self {
+        let BeaconBlockGloas {
+            slot,
+            proposer_index,
+            parent_root,
+            state_root,
+            body,
+        } = block;
+
+        BeaconBlockGloas {
+            slot,
+            proposer_index,
+            parent_root,
+            state_root,
+            body: body.into(),
         }
     }
 }
