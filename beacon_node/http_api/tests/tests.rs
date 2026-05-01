@@ -38,7 +38,7 @@ use proto_array::{ExecutionStatus, core::ProtoNode};
 use reqwest::{RequestBuilder, Response, StatusCode};
 use sensitive_url::SensitiveUrl;
 use slot_clock::SlotClock;
-use ssz::{BitList, Decode, Encode};
+use ssz::{BitList, Decode};
 use state_processing::per_block_processing::get_expected_withdrawals;
 use state_processing::per_slot_processing;
 use state_processing::state_advance::partial_state_advance;
@@ -1062,10 +1062,27 @@ impl ApiTester {
             for validator_indices in self.interesting_validator_indices() {
                 let state_opt = state_id.state(&self.chain).ok();
 
+                let validators: Vec<Validator> = match state_opt.as_ref() {
+                    Some((state, _, _)) => state.validators().clone().to_vec(),
+                    None => vec![],
+                };
+
                 let validator_index_ids: Vec<ValidatorId> = validator_indices
                     .iter()
                     .cloned()
                     .map(ValidatorId::Index)
+                    .collect();
+
+                let validator_pubkey_ids: Vec<ValidatorId> = validator_indices
+                    .iter()
+                    .cloned()
+                    .map(|i| {
+                        ValidatorId::PublicKey(
+                            validators
+                                .get(i as usize)
+                                .map_or(PublicKeyBytes::empty(), |val| val.pubkey),
+                        )
+                    })
                     .collect();
 
                 let ssz_result = match self
@@ -1082,8 +1099,18 @@ impl ApiTester {
                 }
 
                 let ssz_bytes = ssz_result.expect("response should exist");
-                let result = Vec::<ValidatorIdentityData>::from_ssz_bytes(&ssz_bytes)
+                let result_index_ids = Vec::<ValidatorIdentityData>::from_ssz_bytes(&ssz_bytes)
                     .expect("should decode SSZ validator identities");
+
+                let ssz_bytes_pubkey = self
+                    .client
+                    .post_beacon_states_validator_identities_ssz(state_id.0, validator_pubkey_ids)
+                    .await
+                    .unwrap()
+                    .expect("response should exist");
+                let result_pubkey_ids =
+                    Vec::<ValidatorIdentityData>::from_ssz_bytes(&ssz_bytes_pubkey)
+                        .expect("should decode SSZ validator identities");
 
                 let expected: Vec<ValidatorIdentityData> = {
                     let (state, _, _) = state_opt.as_ref().expect("state should exist");
@@ -1114,7 +1141,8 @@ impl ApiTester {
                     }
                 };
 
-                assert_eq!(result, expected, "{:?}", state_id);
+                assert_eq!(result_index_ids, expected, "{:?}", state_id);
+                assert_eq!(result_pubkey_ids, expected, "{:?}", state_id);
             }
         }
         self
@@ -1560,10 +1588,7 @@ impl ApiTester {
             let state = state_opt.as_mut().expect("state should exist");
             let expected = state.pending_consolidations().unwrap();
 
-            let (ssz_bytes, fork_name) = ssz_response.expect("response should exist");
-
-            let expected_fork = state.fork_name(&self.chain.spec).unwrap();
-            assert_eq!(fork_name, Some(expected_fork), "{:?}", state_id);
+            let ssz_bytes = ssz_response.expect("response should exist");
 
             let decoded = Vec::<types::PendingConsolidation>::from_ssz_bytes(&ssz_bytes)
                 .expect("should decode SSZ pending consolidations");
@@ -5027,9 +5052,9 @@ impl ApiTester {
             let attestation_data_root = attestation.data().tree_hash_root();
             let committee_index = attestation.committee_index().expect("committee index");
 
-            let (bytes, fork_name) = self
+            let result = self
                 .client
-                .get_validator_aggregate_attestation_v2_ssz(
+                .get_validator_aggregate_attestation_v2_ssz::<E>(
                     slot,
                     attestation_data_root,
                     committee_index,
@@ -5038,11 +5063,7 @@ impl ApiTester {
                 .unwrap()
                 .expect("response should exist");
 
-            let expected_fork = self.chain.spec.fork_name_at_slot::<E>(slot);
-            assert_eq!(fork_name, expected_fork);
-
-            let expected_bytes = attestation.as_ssz_bytes();
-            assert_eq!(bytes.as_slice(), expected_bytes.as_slice());
+            assert_eq!(result, attestation);
         }
         self
     }
@@ -8030,6 +8051,10 @@ async fn beacon_get_state_hashes() {
         .await;
 }
 
+// Keep this as one chained wrapper for readability and the shared ApiTester flow; merging the
+// chain pushes the async frame above Clippy's 512KB threshold, so scope the allow to this
+// wrapper instead of the underlying endpoint tests.
+#[allow(clippy::large_stack_frames)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn beacon_get_state_info() {
     ApiTester::new()
@@ -8043,12 +8068,6 @@ async fn beacon_get_state_info() {
         .test_beacon_states_fork()
         .await
         .test_beacon_states_validators()
-        .await;
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn beacon_get_state_info_2() {
-    ApiTester::new()
         .await
         .test_beacon_states_validator_balances()
         .await
@@ -8059,12 +8078,6 @@ async fn beacon_get_state_info_2() {
         .test_beacon_states_validator_id()
         .await
         .test_beacon_states_randao()
-        .await;
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn beacon_get_state_validator_identities_ssz() {
-    ApiTester::new()
         .await
         .test_beacon_states_validator_identities_ssz()
         .await;
@@ -8111,6 +8124,9 @@ async fn beacon_get_state_info_fulu() {
         .await;
 }
 
+// Merging the chain pushes the async frame above Clippy's 512KB threshold, so scope the allow to this
+// wrapper instead of the underlying endpoint tests.
+#[allow(clippy::large_stack_frames)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn beacon_get_blocks() {
     ApiTester::new()
@@ -8124,12 +8140,6 @@ async fn beacon_get_blocks() {
         .test_beacon_headers_all_slots()
         .await
         .test_beacon_headers_all_parents()
-        .await;
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn beacon_get_blocks_2() {
-    ApiTester::new()
         .await
         .test_beacon_headers_block_id()
         .await

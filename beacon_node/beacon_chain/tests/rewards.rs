@@ -303,6 +303,9 @@ async fn test_rewards_base_slashings() {
     check_all_base_rewards(&harness, initial_balances).await;
 }
 
+// This test maintains shared mutable harness state across all steps and cannot be split into
+// smaller functions; Box::pin in the body reduces stack usage but the frame still exceeds the
+// 512KB clippy threshold.
 #[allow(clippy::large_stack_frames)]
 #[tokio::test]
 async fn test_rewards_base_multi_inclusion() {

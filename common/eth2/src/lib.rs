@@ -333,29 +333,6 @@ impl BeaconNodeHttpClient {
         }
     }
 
-    /// Perform a HTTP POST request using an 'accept' header, returning `None` on a 404 error.
-    pub async fn post_bytes_opt_accept_header<T: Serialize, U: IntoUrl>(
-        &self,
-        url: U,
-        body: &T,
-        accept_header: Accept,
-        timeout: Duration,
-    ) -> Result<Option<Vec<u8>>, Error> {
-        let response = self
-            .client
-            .post(url)
-            .json(body)
-            .accept(accept_header)
-            .timeout(timeout)
-            .send()
-            .await?;
-        let opt_response = ok_or_error(response).await.optional()?;
-        match opt_response {
-            Some(resp) => Ok(Some(resp.bytes().await?.into_iter().collect::<Vec<_>>())),
-            None => Ok(None),
-        }
-    }
-
     /// Perform a HTTP GET request using an 'accept' header, returning `None` on a 404 error.
     pub async fn get_response_with_response_headers<U: IntoUrl, F, T>(
         &self,
@@ -435,6 +412,29 @@ impl BeaconNodeHttpClient {
         self.post_generic_with_consensus_version(url, body, Some(timeout), fork_name)
             .await?;
         Ok(())
+    }
+
+    /// Perform a HTTP POST request using an 'accept' header, returning `None` on a 404 error.
+    pub async fn post_bytes_opt_accept_header<T: Serialize, U: IntoUrl>(
+        &self,
+        url: U,
+        body: &T,
+        accept_header: Accept,
+        timeout: Duration,
+    ) -> Result<Option<Vec<u8>>, Error> {
+        let response = self
+            .client
+            .post(url)
+            .json(body)
+            .accept(accept_header)
+            .timeout(timeout)
+            .send()
+            .await?;
+        let opt_response = ok_or_error(response).await.optional()?;
+        match opt_response {
+            Some(resp) => Ok(Some(resp.bytes().await?.into_iter().collect::<Vec<_>>())),
+            None => Ok(None),
+        }
     }
 
     /// Perform a HTTP POST request with a custom timeout, returning a JSON response.
@@ -996,11 +996,11 @@ impl BeaconNodeHttpClient {
 
     /// `GET beacon/states/{state_id}/pending_consolidations`
     ///
-    /// Returns `Ok(None)` on a 404 error. Returns `(bytes, fork_name)` on success.
+    /// Returns `Ok(None)` on a 404 error.
     pub async fn get_beacon_states_pending_consolidations_ssz(
         &self,
         state_id: StateId,
-    ) -> Result<Option<(Vec<u8>, Option<ForkName>)>, Error> {
+    ) -> Result<Option<Vec<u8>>, Error> {
         let mut path = self.eth_path(V1)?;
 
         path.path_segments_mut()
@@ -1010,20 +1010,8 @@ impl BeaconNodeHttpClient {
             .push(&state_id.to_string())
             .push("pending_consolidations");
 
-        self.get_response_with_response_headers(
-            path,
-            Accept::Ssz,
-            self.timeouts.default,
-            |response, headers| async move {
-                let fork_name = headers
-                    .get(CONSENSUS_VERSION_HEADER)
-                    .and_then(|v| v.to_str().ok())
-                    .and_then(|s| s.parse::<ForkName>().ok());
-                let bytes = response.bytes().await?.into_iter().collect::<Vec<_>>();
-                Ok((bytes, fork_name))
-            },
-        )
-        .await
+        self.get_bytes_opt_accept_header(path, Accept::Ssz, self.timeouts.default)
+            .await
     }
 
     /// `GET beacon/states/{state_id}/proposer_lookahead`
@@ -3226,13 +3214,13 @@ impl BeaconNodeHttpClient {
 
     /// `GET v2/validator/aggregate_attestation?slot,attestation_data_root,committee_index` in SSZ format
     ///
-    /// Returns `Ok(None)` on a 404 error. Returns `(bytes, fork_name)` on success.
-    pub async fn get_validator_aggregate_attestation_v2_ssz(
+    /// Returns `Ok(None)` on a 404 error.
+    pub async fn get_validator_aggregate_attestation_v2_ssz<E: EthSpec>(
         &self,
         slot: Slot,
         attestation_data_root: Hash256,
         committee_index: CommitteeIndex,
-    ) -> Result<Option<(Vec<u8>, ForkName)>, Error> {
+    ) -> Result<Option<Attestation<E>>, Error> {
         let mut path = self.eth_path(V2)?;
 
         path.path_segments_mut()
@@ -3263,7 +3251,16 @@ impl BeaconNodeHttpClient {
                         )
                     })?;
                 let bytes = response.bytes().await?.into_iter().collect::<Vec<_>>();
-                Ok((bytes, fork_name))
+                let attestation = if fork_name.electra_enabled() {
+                    AttestationElectra::<E>::from_ssz_bytes(&bytes)
+                        .map(Attestation::Electra)
+                        .map_err(Error::InvalidSsz)?
+                } else {
+                    AttestationBase::<E>::from_ssz_bytes(&bytes)
+                        .map(Attestation::Base)
+                        .map_err(Error::InvalidSsz)?
+                };
+                Ok(attestation)
             },
         )
         .await
