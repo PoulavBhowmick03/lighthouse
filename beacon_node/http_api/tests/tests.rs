@@ -8364,10 +8364,6 @@ async fn beacon_get_state_hashes() {
         .await;
 }
 
-// Keep this as one chained wrapper for readability and the shared ApiTester flow; merging the
-// chain pushes the async frame above Clippy's 512KB threshold, so scope the allow to this
-// wrapper instead of the underlying endpoint tests.
-#[allow(clippy::large_stack_frames)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn beacon_get_state_info() {
     ApiTester::new()
@@ -8437,9 +8433,6 @@ async fn beacon_get_state_info_fulu() {
         .await;
 }
 
-// Merging the chain pushes the async frame above Clippy's 512KB threshold, so scope the allow to this
-// wrapper instead of the underlying endpoint tests.
-#[allow(clippy::large_stack_frames)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn beacon_get_blocks() {
     ApiTester::new()
