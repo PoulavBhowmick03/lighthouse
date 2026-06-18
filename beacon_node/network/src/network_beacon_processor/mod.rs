@@ -6,6 +6,7 @@ use beacon_chain::data_column_verification::{
     GossipDataColumnError, KzgVerifiedCustodyDataColumn, observe_gossip_data_column,
 };
 use beacon_chain::fetch_blobs::{FetchEngineBlobError, fetch_and_process_engine_blobs};
+use beacon_chain::partial_data_column_assembler::AssemblyColumn;
 use beacon_chain::test_utils::{BeaconChainHarness, EphemeralHarnessType};
 use beacon_chain::{AvailabilityProcessingStatus, BeaconChain, BeaconChainTypes, BlockError};
 use beacon_processor::{
@@ -37,6 +38,8 @@ use {
 };
 
 pub use sync_methods::{BlockProcessingResult, ChainSegmentProcessId};
+
+use gossip_methods::ReprocessAllowance;
 
 pub type Error<T> = TrySendError<BeaconWorkEvent<T>>;
 
@@ -92,15 +95,17 @@ impl<T: BeaconChainTypes> NetworkBeaconProcessor<T> {
                 package.attestation,
                 package.subnet_id,
                 package.should_import,
-                true,
+                ReprocessAllowance::BlockAndPayload,
                 package.seen_timestamp,
             )
         };
 
         // Define a closure for processing batches of attestations.
         let processor = self.clone();
-        let process_batch =
-            move |attestations| processor.process_gossip_attestation_batch(attestations, true);
+        let process_batch = move |attestations| {
+            processor
+                .process_gossip_attestation_batch(attestations, ReprocessAllowance::BlockAndPayload)
+        };
 
         self.try_send(BeaconWorkEvent {
             drop_during_sync: true,
@@ -134,15 +139,17 @@ impl<T: BeaconChainTypes> NetworkBeaconProcessor<T> {
                 package.message_id,
                 package.peer_id,
                 package.aggregate,
-                true,
+                ReprocessAllowance::BlockAndPayload,
                 package.seen_timestamp,
             )
         };
 
         // Define a closure for processing batches of attestations.
         let processor = self.clone();
-        let process_batch =
-            move |aggregates| processor.process_gossip_aggregate_batch(aggregates, true);
+        let process_batch = move |aggregates| {
+            processor
+                .process_gossip_aggregate_batch(aggregates, ReprocessAllowance::BlockAndPayload)
+        };
 
         let beacon_block_root = aggregate.message().aggregate().data().beacon_block_root;
         self.try_send(BeaconWorkEvent {
@@ -931,7 +938,7 @@ impl<T: BeaconChainTypes> NetworkBeaconProcessor<T> {
         .await
         {
             Ok(Some(availability)) => match availability {
-                AvailabilityProcessingStatus::Imported(_) => {
+                AvailabilityProcessingStatus::Imported(..) => {
                     debug!(
                         result = "imported block and custody columns",
                         %block_root,
@@ -972,14 +979,35 @@ impl<T: BeaconChainTypes> NetworkBeaconProcessor<T> {
         // Publish partial columns without eager send
         // TODO(gloas): implement publish partial columns without eager send
         if let Some(assembler) = self.chain.data_availability_checker.partial_assembler() {
-            let columns = assembler.get_partials_and_mark_as_local_fetched(block_root, &header);
+            let columns = assembler.get_columns_and_mark_as_local_fetched(block_root, &header);
+            // Republish both complete and incomplete columns as partials
+            let columns: Vec<_> = columns
+                .into_iter()
+                .filter_map(|column| match column {
+                    AssemblyColumn::Incomplete(partial) => Some(partial.into_inner()),
+                    AssemblyColumn::Complete(full) => {
+                        let DataColumnSidecar::Fulu(fulu) = full.as_data_column() else {
+                            return None;
+                        };
+                        match fulu.to_partial() {
+                            Ok(partial) => Some(Arc::new(partial)),
+                            Err(err) => {
+                                error!(
+                                    %block_root,
+                                    column_index = %full.index(),
+                                    ?err,
+                                    "Failed to convert complete column to partial for re-seeding"
+                                );
+                                None
+                            }
+                        }
+                    }
+                })
+                .collect();
             if !columns.is_empty() {
                 debug!(block = %block_root, "Publishing all partials after getBlobs");
                 self.send_network_message(NetworkMessage::PublishPartialColumns {
-                    columns: columns
-                        .into_iter()
-                        .map(|partial| partial.into_inner())
-                        .collect(),
+                    columns,
                     header,
                 });
             } else {
@@ -998,7 +1026,7 @@ impl<T: BeaconChainTypes> NetworkBeaconProcessor<T> {
             Ok(Some((availability_processing_status, data_columns_to_publish))) => {
                 self.publish_data_columns_gradually(data_columns_to_publish, block_root);
                 match &availability_processing_status {
-                    AvailabilityProcessingStatus::Imported(hash) => {
+                    AvailabilityProcessingStatus::Imported(_, hash) => {
                         debug!(
                             result = "imported block and custody columns",
                             block_hash = %hash,

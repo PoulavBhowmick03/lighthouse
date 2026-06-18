@@ -284,9 +284,11 @@ pub fn get_validator_attestation_data<T: BeaconChainTypes>(
                         )));
                     }
 
+                    // Always use committee_index 0 regardless of the query parameter, since
+                    // attestation data does not depend on the committee index post-Electra.
                     // capture the attestation data first
                     let attestation_data = chain
-                        .produce_unaggregated_attestation(query.slot, query.committee_index)
+                        .produce_unaggregated_attestation(query.slot, 0)
                         .map(|attestation| attestation.data().clone())
                         .map_err(warp_utils::reject::unhandled_error)?;
 
