@@ -418,6 +418,20 @@ impl BeaconNodeHttpClient {
         Ok(())
     }
 
+    /// Perform a HTTP POST request with a custom timeout, returning a JSON response.
+    async fn post_with_timeout_and_response<T: DeserializeOwned, U: IntoUrl, V: Serialize>(
+        &self,
+        url: U,
+        body: &V,
+        timeout: Duration,
+    ) -> Result<T, Error> {
+        self.post_generic(url, body, Some(timeout))
+            .await?
+            .json()
+            .await
+            .map_err(Error::from)
+    }
+
     /// Perform a HTTP POST request using an 'accept' header, returning `None` on a 404 error.
     pub async fn post_bytes_opt_accept_header<T: Serialize, U: IntoUrl>(
         &self,
@@ -439,20 +453,6 @@ impl BeaconNodeHttpClient {
             Some(resp) => Ok(Some(resp.bytes().await?.into_iter().collect::<Vec<_>>())),
             None => Ok(None),
         }
-    }
-
-    /// Perform a HTTP POST request with a custom timeout, returning a JSON response.
-    async fn post_with_timeout_and_response<T: DeserializeOwned, U: IntoUrl, V: Serialize>(
-        &self,
-        url: U,
-        body: &V,
-        timeout: Duration,
-    ) -> Result<T, Error> {
-        self.post_generic(url, body, Some(timeout))
-            .await?
-            .json()
-            .await
-            .map_err(Error::from)
     }
 
     /// Generic POST function supporting arbitrary responses and timeouts.
